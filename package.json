@@ -5,19 +5,33 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
-    "test": "node test-connection.js"
+    "test": "node test-connection.js",
+    "migrate": "npx sequelize-cli db:migrate",
+    "migrate:undo": "npx sequelize-cli db:migrate:undo",
+    "seed": "npx sequelize-cli db:seed:all",
+    "seed:undo": "npx sequelize-cli db:seed:undo:all",
+    "db:reset": "npx sequelize-cli db:drop && npx sequelize-cli db:create && npm run migrate && npm run seed"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "rental",
+    "car",
+    "api",
+    "nodejs",
+    "express",
+    "sequelize"
+  ],
+  "author": "Your Name",
   "license": "ISC",
-  "description": "",
+  "description": "Car Rental Management API",
   "dependencies": {
     "bcryptjs": "^3.0.2",
     "colors": "^1.4.0",
     "compression": "^1.8.1",
+    "cookie-parser": "^1.4.6",
     "cors": "^2.8.5",
     "dotenv": "^17.2.1",
-    "express": "^5.1.0",
+    "express": "^4.18.2",
+    "express-rate-limit": "^7.1.5",
     "express-validator": "^7.2.1",
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.2",
@@ -31,5 +45,9 @@
     "concurrently": "^9.2.1",
     "nodemon": "^3.1.10",
     "sequelize-cli": "^6.6.3"
+  },
+  "engines": {
+    "node": ">=16.0.0",
+    "npm": ">=8.0.0"
   }
 }

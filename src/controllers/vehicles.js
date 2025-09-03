@@ -630,7 +630,7 @@ exports.getVehicleStats = asyncHandler(async (req, res, next) => {
         "maintenanceVehicles",
       ],
       [sequelize.fn("AVG", sequelize.col("price")), "averagePrice"],
-      [sequelize.fn("SUM", sequelize.col("bookings")), "totalBookings"],
+      [sequelize.fn("SUM", sequelize.col("totalBookings")), "totalBookings"],
       [sequelize.fn("AVG", sequelize.col("rating")), "averageRating"],
     ],
     where: { status: ["active", "maintenance"] },

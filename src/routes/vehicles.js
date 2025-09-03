@@ -1,4 +1,4 @@
-// src/routes/vehicles.js - Complete implementation
+// src/routes/vehicles.js - Fixed implementation
 const express = require("express");
 const {
   getVehicles,
@@ -30,16 +30,18 @@ const router = express.Router();
 // Public routes
 router.get("/", validatePagination, optionalAuth, getVehicles);
 router.get("/availability", getAvailableVehicles);
-router.get("/:id", validateUUID, getVehicle);
 
-// Protected routes (require authentication)
-router.use(protect);
-
-// Admin routes
-router.get("/admin/stats", authorize("admin", "super-admin"), getVehicleStats);
+// Protected routes
+router.get(
+  "/stats",
+  protect,
+  authorize("admin", "super-admin"),
+  getVehicleStats
+);
 
 router.post(
   "/",
+  protect,
   authorize("admin", "super-admin"),
   uploadMultipleImages,
   handleUploadError,
@@ -47,10 +49,14 @@ router.post(
   createVehicle
 );
 
+// Single vehicle routes
+router.get("/:id", validateUUID, getVehicle);
+
 router.put(
   "/:id",
-  validateUUID,
+  protect,
   authorize("admin", "super-admin"),
+  validateUUID,
   uploadMultipleImages,
   handleUploadError,
   validateVehicleUpdate,
@@ -59,16 +65,18 @@ router.put(
 
 router.delete(
   "/:id",
-  validateUUID,
+  protect,
   authorize("admin", "super-admin"),
+  validateUUID,
   deleteVehicle
 );
 
 // Image management routes
 router.put(
   "/:id/images",
-  validateUUID,
+  protect,
   authorize("admin", "super-admin"),
+  validateUUID,
   uploadMultipleImages,
   handleUploadError,
   uploadVehicleImages
@@ -76,16 +84,18 @@ router.put(
 
 router.delete(
   "/:id/images/:imageIndex",
-  validateUUID,
+  protect,
   authorize("admin", "super-admin"),
+  validateUUID,
   removeVehicleImage
 );
 
 // Status management
 router.put(
   "/:id/status",
-  validateUUID,
+  protect,
   authorize("admin", "super-admin"),
+  validateUUID,
   updateVehicleStatus
 );
 

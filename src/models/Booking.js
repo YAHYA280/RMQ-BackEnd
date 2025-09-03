@@ -357,23 +357,23 @@ const Booking = sequelize.define(
     },
     indexes: [
       {
-        fields: ["bookingNumber"],
+        fields: ["booking_number"], // Use snake_case
         unique: true,
       },
       {
-        fields: ["customerId"],
+        fields: ["customer_id"], // Use snake_case
       },
       {
-        fields: ["vehicleId"],
+        fields: ["vehicle_id"], // Use snake_case
       },
       {
         fields: ["status"],
       },
       {
-        fields: ["pickupDate", "returnDate"],
+        fields: ["pickup_date", "return_date"], // Use snake_case
       },
       {
-        fields: ["createdById"],
+        fields: ["created_by_id"], // Use snake_case
       },
     ],
   }

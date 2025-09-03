@@ -1,4 +1,4 @@
-// src/routes/bookings.js - Complete implementation
+// src/routes/bookings.js - Fixed implementation
 const express = require("express");
 const {
   getBookings,
@@ -25,20 +25,23 @@ const {
 
 const router = express.Router();
 
-// All routes require authentication
+// All routes require authentication and admin role
 router.use(protect);
-
-// All routes require admin or super-admin role
 router.use(authorize("admin", "super-admin"));
 
 // Booking management routes
 router.get("/", validatePagination, getBookings);
 router.get("/stats", getBookingStats);
-router.get("/availability/:vehicleId", validateUUID, checkAvailability);
-router.get("/customer/:customerId", validateUUID, getCustomerBookings);
 
 router.post("/", validateBooking, createBooking);
 
+// Availability check
+router.get("/availability/:vehicleId", validateUUID, checkAvailability);
+
+// Customer bookings
+router.get("/customer/:customerId", validateUUID, getCustomerBookings);
+
+// Single booking routes
 router.get("/:id", validateUUID, getBooking);
 
 router.put("/:id", validateUUID, validateBookingUpdate, updateBooking);

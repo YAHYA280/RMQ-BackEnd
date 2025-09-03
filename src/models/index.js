@@ -1,4 +1,4 @@
-// src/models/index.js - Updated with all associations
+// src/models/index.js - Fixed associations to avoid naming collisions
 const Admin = require("./Admin");
 const Vehicle = require("./Vehicle");
 const Customer = require("./Customer");
@@ -43,7 +43,7 @@ Vehicle.belongsTo(Admin, {
 
 Vehicle.hasMany(Booking, {
   foreignKey: "vehicleId",
-  as: "bookings",
+  as: "vehicleBookings", // Changed from "bookings" to avoid collision
   onDelete: "CASCADE",
 });
 
@@ -55,7 +55,7 @@ Customer.belongsTo(Admin, {
 
 Customer.hasMany(Booking, {
   foreignKey: "customerId",
-  as: "bookings",
+  as: "customerBookings", // Changed from "bookings" for consistency
   onDelete: "CASCADE",
 });
 

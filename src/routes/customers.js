@@ -1,4 +1,4 @@
-// src/routes/customers.js - Complete implementation
+// src/routes/customers.js - Fixed implementation
 const express = require("express");
 const {
   getCustomers,
@@ -26,10 +26,8 @@ const {
 
 const router = express.Router();
 
-// All routes require authentication
+// All routes require authentication and admin role
 router.use(protect);
-
-// All routes require admin or super-admin role
 router.use(authorize("admin", "super-admin"));
 
 // Customer management routes
@@ -45,6 +43,7 @@ router.post(
   createCustomer
 );
 
+// Single customer routes
 router.get("/:id", validateUUID, getCustomer);
 
 router.put(

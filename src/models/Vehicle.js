@@ -1,4 +1,4 @@
-// src/models/Vehicle.js - Complete implementation
+// src/models/Vehicle.js - Fixed naming collision
 const { DataTypes } = require("sequelize");
 const { sequelize } = require("../config/database");
 
@@ -129,7 +129,7 @@ const Vehicle = sequelize.define(
         max: 5,
       },
     },
-    bookings: {
+    totalBookings: {
       type: DataTypes.INTEGER,
       defaultValue: 0,
       validate: {
@@ -228,7 +228,7 @@ const Vehicle = sequelize.define(
         fields: ["price"],
       },
       {
-        fields: ["createdById"],
+        fields: ["created_by_id"],
       },
     ],
   }
@@ -243,7 +243,7 @@ Vehicle.prototype.isMaintenanceDue = function () {
 };
 
 Vehicle.prototype.incrementBookings = async function () {
-  await this.increment("bookings");
+  await this.increment("totalBookings");
   await this.reload();
   return this;
 };
@@ -251,7 +251,7 @@ Vehicle.prototype.incrementBookings = async function () {
 Vehicle.prototype.updateRating = async function (newRating) {
   // Simple rating update - in production, you'd calculate average from all ratings
   const currentRating = parseFloat(this.rating) || 0;
-  const bookingCount = this.bookings || 1;
+  const bookingCount = this.totalBookings || 1;
   const updatedRating =
     (currentRating * (bookingCount - 1) + newRating) / bookingCount;
 
@@ -278,7 +278,7 @@ Vehicle.getAvailableForDateRange = async function (
     include: [
       {
         model: Booking,
-        as: "bookings",
+        as: "vehicleBookings", // Using the correct association alias
         where: {
           status: ["confirmed", "active"],
           [require("sequelize").Op.or]: [
@@ -307,7 +307,8 @@ Vehicle.getAvailableForDateRange = async function (
 
   // Filter out vehicles with conflicting bookings
   return availableVehicles.filter(
-    (vehicle) => !vehicle.bookings || vehicle.bookings.length === 0
+    (vehicle) =>
+      !vehicle.vehicleBookings || vehicle.vehicleBookings.length === 0
   );
 };
 

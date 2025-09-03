@@ -177,10 +177,10 @@ const Customer = sequelize.define(
         fields: ["status"],
       },
       {
-        fields: ["createdById"],
+        fields: ["created_by_id"], // Change from createdById
       },
       {
-        fields: ["referralCode"],
+        fields: ["referral_code"], // Change from referralCode
         unique: true,
       },
     ],

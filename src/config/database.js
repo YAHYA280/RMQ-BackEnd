@@ -1,4 +1,4 @@
-// src/config/database.js
+// src/config/database.js - Fixed with proper naming strategy
 const { Sequelize } = require("sequelize");
 require("colors");
 
@@ -13,7 +13,8 @@ const sequelize = new Sequelize(
     logging: process.env.NODE_ENV === "development" ? console.log : false,
     define: {
       timestamps: true,
-      underscored: true,
+      underscored: true, // This ensures snake_case in database
+      freezeTableName: true, // Prevent pluralization
     },
     pool: {
       max: 5,
@@ -29,9 +30,9 @@ const connectDB = async () => {
     await sequelize.authenticate();
     console.log("✅ PostgreSQL Connected successfully!".cyan.underline.bold);
 
-    // Sync database in development
+    // Sync database in development - but be careful with alter
     if (process.env.NODE_ENV === "development") {
-      await sequelize.sync({ alter: true });
+      await sequelize.sync({ force: false }); // Changed from alter to avoid conflicts
       console.log(
         "✅ Database synchronized - Tables created/updated".green.bold
       );
