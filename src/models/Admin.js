@@ -1,4 +1,4 @@
-// src/models/Admin.js
+// src/models/Admin.js - Updated with proper scopes
 const { DataTypes } = require("sequelize");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
@@ -13,20 +13,32 @@ const Admin = sequelize.define(
       primaryKey: true,
     },
     name: {
-      type: DataTypes.STRING(50),
+      type: DataTypes.STRING(100),
       allowNull: false,
+      validate: {
+        notEmpty: true,
+        len: [2, 100],
+      },
     },
     email: {
       type: DataTypes.STRING,
       allowNull: false,
       unique: true,
+      validate: {
+        isEmail: true,
+        notEmpty: true,
+      },
     },
     password: {
       type: DataTypes.STRING,
       allowNull: false,
+      validate: {
+        notEmpty: true,
+        len: [6, 255],
+      },
     },
     role: {
-      type: DataTypes.STRING,
+      type: DataTypes.ENUM("admin", "super-admin"),
       defaultValue: "admin",
     },
     isActive: {
@@ -39,15 +51,31 @@ const Admin = sequelize.define(
     passwordChangedAt: {
       type: DataTypes.DATE,
     },
+    resetPasswordToken: {
+      type: DataTypes.STRING,
+    },
+    resetPasswordExpire: {
+      type: DataTypes.DATE,
+    },
   },
   {
     tableName: "admins",
     timestamps: true,
+    defaultScope: {
+      attributes: { exclude: ["password"] },
+    },
+    scopes: {
+      withPassword: {
+        attributes: {},
+      },
+    },
     hooks: {
       beforeSave: async (admin) => {
         // Only hash password if it was changed
         if (admin.changed("password")) {
-          admin.password = await bcrypt.hash(admin.password, 12);
+          const salt = await bcrypt.genSalt(12);
+          admin.password = await bcrypt.hash(admin.password, salt);
+          admin.passwordChangedAt = new Date();
         }
       },
     },
@@ -56,13 +84,33 @@ const Admin = sequelize.define(
 
 // Instance methods
 Admin.prototype.getSignedJwtToken = function () {
-  return jwt.sign({ id: this.id }, process.env.JWT_SECRET, {
-    expiresIn: process.env.JWT_EXPIRE,
-  });
+  return jwt.sign(
+    {
+      id: this.id,
+      role: this.role,
+      email: this.email,
+    },
+    process.env.JWT_SECRET,
+    {
+      expiresIn: process.env.JWT_EXPIRE || "30d",
+    }
+  );
 };
 
 Admin.prototype.matchPassword = async function (enteredPassword) {
   return await bcrypt.compare(enteredPassword, this.password);
+};
+
+// Check if password was changed after JWT was issued
+Admin.prototype.changedPasswordAfter = function (JWTTimestamp) {
+  if (this.passwordChangedAt) {
+    const changedTimestamp = parseInt(
+      this.passwordChangedAt.getTime() / 1000,
+      10
+    );
+    return JWTTimestamp < changedTimestamp;
+  }
+  return false;
 };
 
 module.exports = Admin;

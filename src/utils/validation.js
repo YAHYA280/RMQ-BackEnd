@@ -1,5 +1,5 @@
-// src/utils/validation.js
-const { body } = require("express-validator");
+// src/utils/validation.js - Updated with complete validations
+const { body, param, query } = require("express-validator");
 
 // Admin registration validation
 exports.validateAdminRegistration = [
@@ -7,8 +7,8 @@ exports.validateAdminRegistration = [
     .trim()
     .notEmpty()
     .withMessage("Name is required")
-    .isLength({ min: 2, max: 50 })
-    .withMessage("Name must be between 2 and 50 characters"),
+    .isLength({ min: 2, max: 100 })
+    .withMessage("Name must be between 2 and 100 characters"),
 
   body("email")
     .isEmail()
@@ -37,6 +37,36 @@ exports.validateAdminLogin = [
     .normalizeEmail(),
 
   body("password").notEmpty().withMessage("Password is required"),
+];
+
+// Profile update validation
+exports.validateProfileUpdate = [
+  body("name")
+    .optional()
+    .trim()
+    .isLength({ min: 2, max: 100 })
+    .withMessage("Name must be between 2 and 100 characters"),
+
+  body("email")
+    .optional()
+    .isEmail()
+    .withMessage("Please enter a valid email")
+    .normalizeEmail(),
+];
+
+// Password update validation
+exports.validatePasswordUpdate = [
+  body("currentPassword")
+    .notEmpty()
+    .withMessage("Current password is required"),
+
+  body("newPassword")
+    .isLength({ min: 6 })
+    .withMessage("New password must be at least 6 characters")
+    .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
+    .withMessage(
+      "New password must contain at least one lowercase letter, one uppercase letter, and one number"
+    ),
 ];
 
 // Vehicle validation
@@ -77,12 +107,12 @@ exports.validateVehicle = [
     .withMessage("Price must be a positive number"),
 
   body("transmission")
-    .isIn(["Manual", "Automatic"])
-    .withMessage("Transmission must be either Manual or Automatic"),
+    .isIn(["manual", "automatic"])
+    .withMessage("Transmission must be either manual or automatic"),
 
   body("fuelType")
-    .isIn(["Petrol", "Diesel", "Electric", "Hybrid"])
-    .withMessage("Fuel type must be Petrol, Diesel, Electric, or Hybrid"),
+    .isIn(["petrol", "diesel", "electric", "hybrid"])
+    .withMessage("Fuel type must be petrol, diesel, electric, or hybrid"),
 
   body("seats")
     .isInt({ min: 2, max: 8 })
@@ -199,13 +229,13 @@ exports.validateVehicleUpdate = [
 
   body("transmission")
     .optional()
-    .isIn(["Manual", "Automatic"])
-    .withMessage("Transmission must be either Manual or Automatic"),
+    .isIn(["manual", "automatic"])
+    .withMessage("Transmission must be either manual or automatic"),
 
   body("fuelType")
     .optional()
-    .isIn(["Petrol", "Diesel", "Electric", "Hybrid"])
-    .withMessage("Fuel type must be Petrol, Diesel, Electric, or Hybrid"),
+    .isIn(["petrol", "diesel", "electric", "hybrid"])
+    .withMessage("Fuel type must be petrol, diesel, electric, or hybrid"),
 
   body("seats")
     .optional()
@@ -248,32 +278,16 @@ exports.validateVehicleUpdate = [
     .isArray()
     .withMessage("Features must be an array"),
 
-  body("features.*")
+  body("available")
     .optional()
-    .isIn([
-      "airConditioning",
-      "bluetooth",
-      "gps",
-      "cruiseControl",
-      "parkingSensors",
-      "backupCamera",
-      "leatherSeats",
-      "keylessEntry",
-      "electricWindows",
-      "abs",
-    ])
-    .withMessage("Invalid feature selected"),
+    .isBoolean()
+    .withMessage("Available status must be true or false"),
 
   body("description")
     .optional()
     .trim()
     .isLength({ max: 500 })
     .withMessage("Description cannot be more than 500 characters"),
-
-  body("available")
-    .optional()
-    .isBoolean()
-    .withMessage("Available status must be true or false"),
 
   body("lastTechnicalVisit")
     .optional()
@@ -284,4 +298,228 @@ exports.validateVehicleUpdate = [
     .optional()
     .isISO8601()
     .withMessage("Please enter a valid date for last oil change"),
+];
+
+// Customer validation
+exports.validateCustomer = [
+  body("firstName")
+    .trim()
+    .notEmpty()
+    .withMessage("First name is required")
+    .isLength({ min: 2, max: 50 })
+    .withMessage("First name must be between 2 and 50 characters"),
+
+  body("lastName")
+    .trim()
+    .notEmpty()
+    .withMessage("Last name is required")
+    .isLength({ min: 2, max: 50 })
+    .withMessage("Last name must be between 2 and 50 characters"),
+
+  body("email")
+    .isEmail()
+    .withMessage("Please enter a valid email")
+    .normalizeEmail(),
+
+  body("phone")
+    .matches(/^(\+212|212|0)[5-7]\d{8}$/)
+    .withMessage("Please enter a valid Moroccan phone number"),
+
+  body("dateOfBirth")
+    .optional()
+    .isISO8601()
+    .withMessage("Please enter a valid date of birth"),
+
+  body("address")
+    .optional()
+    .trim()
+    .isLength({ max: 200 })
+    .withMessage("Address cannot be more than 200 characters"),
+];
+
+// Customer update validation
+exports.validateCustomerUpdate = [
+  body("firstName")
+    .optional()
+    .trim()
+    .notEmpty()
+    .withMessage("First name cannot be empty")
+    .isLength({ min: 2, max: 50 })
+    .withMessage("First name must be between 2 and 50 characters"),
+
+  body("lastName")
+    .optional()
+    .trim()
+    .notEmpty()
+    .withMessage("Last name cannot be empty")
+    .isLength({ min: 2, max: 50 })
+    .withMessage("Last name must be between 2 and 50 characters"),
+
+  body("email")
+    .optional()
+    .isEmail()
+    .withMessage("Please enter a valid email")
+    .normalizeEmail(),
+
+  body("phone")
+    .optional()
+    .matches(/^(\+212|212|0)[5-7]\d{8}$/)
+    .withMessage("Please enter a valid Moroccan phone number"),
+
+  body("dateOfBirth")
+    .optional()
+    .isISO8601()
+    .withMessage("Please enter a valid date of birth"),
+
+  body("address")
+    .optional()
+    .trim()
+    .isLength({ max: 200 })
+    .withMessage("Address cannot be more than 200 characters"),
+
+  body("status")
+    .optional()
+    .isIn(["active", "inactive", "blocked"])
+    .withMessage("Status must be active, inactive, or blocked"),
+];
+
+// Booking validation
+exports.validateBooking = [
+  body("customerId")
+    .notEmpty()
+    .withMessage("Customer ID is required")
+    .isUUID()
+    .withMessage("Invalid customer ID format"),
+
+  body("vehicleId")
+    .notEmpty()
+    .withMessage("Vehicle ID is required")
+    .isUUID()
+    .withMessage("Invalid vehicle ID format"),
+
+  body("pickupDate")
+    .isISO8601()
+    .withMessage("Please enter a valid pickup date")
+    .custom((value) => {
+      if (new Date(value) < new Date()) {
+        throw new Error("Pickup date cannot be in the past");
+      }
+      return true;
+    }),
+
+  body("returnDate")
+    .isISO8601()
+    .withMessage("Please enter a valid return date")
+    .custom((value, { req }) => {
+      if (new Date(value) <= new Date(req.body.pickupDate)) {
+        throw new Error("Return date must be after pickup date");
+      }
+      return true;
+    }),
+
+  body("pickupTime")
+    .matches(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/)
+    .withMessage("Please enter a valid pickup time (HH:MM format)"),
+
+  body("returnTime")
+    .matches(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/)
+    .withMessage("Please enter a valid return time (HH:MM format)"),
+
+  body("pickupLocation")
+    .isIn([
+      "Tangier Airport",
+      "Tangier City Center",
+      "Tangier Port",
+      "Hotel Pickup",
+      "Custom Location",
+    ])
+    .withMessage("Please select a valid pickup location"),
+
+  body("returnLocation")
+    .isIn([
+      "Tangier Airport",
+      "Tangier City Center",
+      "Tangier Port",
+      "Hotel Pickup",
+      "Custom Location",
+    ])
+    .withMessage("Please select a valid return location"),
+
+  body("notes")
+    .optional()
+    .trim()
+    .isLength({ max: 500 })
+    .withMessage("Notes cannot be more than 500 characters"),
+];
+
+// Booking update validation
+exports.validateBookingUpdate = [
+  body("pickupDate")
+    .optional()
+    .isISO8601()
+    .withMessage("Please enter a valid pickup date"),
+
+  body("returnDate")
+    .optional()
+    .isISO8601()
+    .withMessage("Please enter a valid return date"),
+
+  body("pickupTime")
+    .optional()
+    .matches(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/)
+    .withMessage("Please enter a valid pickup time (HH:MM format)"),
+
+  body("returnTime")
+    .optional()
+    .matches(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/)
+    .withMessage("Please enter a valid return time (HH:MM format)"),
+
+  body("pickupLocation")
+    .optional()
+    .isIn([
+      "Tangier Airport",
+      "Tangier City Center",
+      "Tangier Port",
+      "Hotel Pickup",
+      "Custom Location",
+    ])
+    .withMessage("Please select a valid pickup location"),
+
+  body("returnLocation")
+    .optional()
+    .isIn([
+      "Tangier Airport",
+      "Tangier City Center",
+      "Tangier Port",
+      "Hotel Pickup",
+      "Custom Location",
+    ])
+    .withMessage("Please select a valid return location"),
+
+  body("status")
+    .optional()
+    .isIn(["pending", "confirmed", "active", "completed", "cancelled"])
+    .withMessage("Invalid status"),
+
+  body("notes")
+    .optional()
+    .trim()
+    .isLength({ max: 500 })
+    .withMessage("Notes cannot be more than 500 characters"),
+];
+
+// Parameter validations
+exports.validateUUID = [param("id").isUUID().withMessage("Invalid ID format")];
+
+// Query validations
+exports.validatePagination = [
+  query("page")
+    .optional()
+    .isInt({ min: 1 })
+    .withMessage("Page must be a positive integer"),
+
+  query("limit")
+    .optional()
+    .isInt({ min: 1, max: 100 })
+    .withMessage("Limit must be between 1 and 100"),
 ];
