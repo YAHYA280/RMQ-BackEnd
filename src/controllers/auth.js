@@ -1,5 +1,5 @@
 // src/controllers/auth.js
-const { Admin } = require("../models");
+const { Admin } = require("../models/index");
 const { validationResult } = require("express-validator");
 
 // @desc    Register admin
@@ -51,6 +51,7 @@ exports.register = async (req, res, next) => {
       },
     });
   } catch (error) {
+    console.error("Register error:", error);
     next(error);
   }
 };
@@ -121,6 +122,7 @@ exports.login = async (req, res, next) => {
       },
     });
   } catch (error) {
+    console.error("Login error:", error);
     next(error);
   }
 };
@@ -137,6 +139,7 @@ exports.getMe = async (req, res, next) => {
       data: admin,
     });
   } catch (error) {
+    console.error("GetMe error:", error);
     next(error);
   }
 };
@@ -159,6 +162,7 @@ exports.updateProfile = async (req, res, next) => {
       data: req.admin,
     });
   } catch (error) {
+    console.error("UpdateProfile error:", error);
     next(error);
   }
 };
@@ -191,6 +195,7 @@ exports.updatePassword = async (req, res, next) => {
       token,
     });
   } catch (error) {
+    console.error("UpdatePassword error:", error);
     next(error);
   }
 };

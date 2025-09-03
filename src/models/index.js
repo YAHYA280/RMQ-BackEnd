@@ -1,18 +1,9 @@
 // src/models/index.js
+// Import models without associations for now
 const Admin = require("./Admin");
 const Vehicle = require("./Vehicle");
 
-// Define associations
-Admin.hasMany(Vehicle, {
-  foreignKey: "createdById",
-  as: "vehicles",
-});
-
-Vehicle.belongsTo(Admin, {
-  foreignKey: "createdById",
-  as: "createdBy",
-});
-
+// Export models - NO ASSOCIATIONS for now
 module.exports = {
   Admin,
   Vehicle,

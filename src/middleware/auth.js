@@ -1,6 +1,6 @@
 // src/middleware/auth.js
 const jwt = require("jsonwebtoken");
-const { Admin } = require("../models");
+const { Admin } = require("../models/index");
 
 // Protect routes - Check if user is authenticated
 exports.protect = async (req, res, next) => {
@@ -46,6 +46,7 @@ exports.protect = async (req, res, next) => {
 
     next();
   } catch (error) {
+    console.error("Auth protect error:", error);
     return res.status(401).json({
       success: false,
       message: "Not authorized to access this route",

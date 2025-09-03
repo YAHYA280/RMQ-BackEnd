@@ -1,3 +1,4 @@
+// src/config/database.js
 const { Sequelize } = require("sequelize");
 require("colors");
 
@@ -26,16 +27,23 @@ const sequelize = new Sequelize(
 const connectDB = async () => {
   try {
     await sequelize.authenticate();
-    console.log("PostgreSQL Connected successfully!".cyan.underline.bold);
+    console.log("✅ PostgreSQL Connected successfully!".cyan.underline.bold);
 
     // Sync database in development
     if (process.env.NODE_ENV === "development") {
       await sequelize.sync({ alter: true });
-      console.log("Database synchronized".green.bold);
+      console.log(
+        "✅ Database synchronized - Tables created/updated".green.bold
+      );
     }
+
+    return sequelize;
   } catch (error) {
     console.error(
-      `Database connection error: ${error.message}`.red.underline.bold
+      `❌ Database connection error: ${error.message}`.red.underline.bold
+    );
+    console.error(
+      "💡 Vérifiez que PostgreSQL fonctionne et que les credentials sont corrects"
     );
     process.exit(1);
   }
