@@ -1,6 +1,6 @@
 // src/middleware/auth.js
 const jwt = require("jsonwebtoken");
-const Admin = require("../models/Admin");
+const { Admin } = require("../models");
 
 // Protect routes - Check if user is authenticated
 exports.protect = async (req, res, next) => {
@@ -27,7 +27,7 @@ exports.protect = async (req, res, next) => {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
     // Get admin from database
-    req.admin = await Admin.findById(decoded.id);
+    req.admin = await Admin.findByPk(decoded.id);
 
     if (!req.admin) {
       return res.status(401).json({

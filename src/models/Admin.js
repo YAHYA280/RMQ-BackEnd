@@ -1,72 +1,95 @@
 // src/models/Admin.js
-const mongoose = require("mongoose");
+const { DataTypes } = require("sequelize");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
+const { sequelize } = require("../config/database");
 
-const adminSchema = new mongoose.Schema(
+const Admin = sequelize.define(
+  "Admin",
   {
+    id: {
+      type: DataTypes.UUID,
+      defaultValue: DataTypes.UUIDV4,
+      primaryKey: true,
+    },
     name: {
-      type: String,
-      required: [true, "Please add a name"],
-      trim: true,
-      maxlength: [50, "Name cannot be more than 50 characters"],
+      type: DataTypes.STRING(50),
+      allowNull: false,
+      validate: {
+        notEmpty: {
+          msg: "Please add a name",
+        },
+        len: {
+          args: [1, 50],
+          msg: "Name cannot be more than 50 characters",
+        },
+      },
     },
     email: {
-      type: String,
-      required: [true, "Please add an email"],
+      type: DataTypes.STRING,
+      allowNull: false,
       unique: true,
-      match: [
-        /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/,
-        "Please add a valid email",
-      ],
+      validate: {
+        isEmail: {
+          msg: "Please add a valid email",
+        },
+      },
     },
     password: {
-      type: String,
-      required: [true, "Please add a password"],
-      minlength: 6,
-      select: false, // Don't return password by default
+      type: DataTypes.STRING,
+      allowNull: false,
+      validate: {
+        len: {
+          args: [6, 255],
+          msg: "Password must be at least 6 characters",
+        },
+      },
     },
     role: {
-      type: String,
-      enum: ["admin", "super-admin"],
-      default: "admin",
+      type: DataTypes.ENUM("admin", "super-admin"),
+      defaultValue: "admin",
     },
     isActive: {
-      type: Boolean,
-      default: true,
+      type: DataTypes.BOOLEAN,
+      defaultValue: true,
     },
     lastLogin: {
-      type: Date,
+      type: DataTypes.DATE,
     },
     passwordChangedAt: {
-      type: Date,
+      type: DataTypes.DATE,
     },
   },
   {
-    timestamps: true,
+    tableName: "admins",
+    hooks: {
+      beforeSave: async (admin) => {
+        // Only hash password if it was changed
+        if (admin.changed("password")) {
+          admin.password = await bcrypt.hash(admin.password, 12);
+        }
+      },
+    },
+    defaultScope: {
+      attributes: { exclude: ["password"] },
+    },
+    scopes: {
+      withPassword: {
+        attributes: { include: ["password"] },
+      },
+    },
   }
 );
 
-// Encrypt password using bcrypt
-adminSchema.pre("save", async function (next) {
-  // Only run this function if password was actually modified
-  if (!this.isModified("password")) return next();
-
-  // Hash the password with cost of 12
-  this.password = await bcrypt.hash(this.password, 12);
-  next();
-});
-
-// Sign JWT and return
-adminSchema.methods.getSignedJwtToken = function () {
-  return jwt.sign({ id: this._id }, process.env.JWT_SECRET, {
+// Instance methods
+Admin.prototype.getSignedJwtToken = function () {
+  return jwt.sign({ id: this.id }, process.env.JWT_SECRET, {
     expiresIn: process.env.JWT_EXPIRE,
   });
 };
 
-// Match user entered password to hashed password in database
-adminSchema.methods.matchPassword = async function (enteredPassword) {
+Admin.prototype.matchPassword = async function (enteredPassword) {
   return await bcrypt.compare(enteredPassword, this.password);
 };
 
-module.exports = mongoose.model("Admin", adminSchema);
+module.exports = Admin;

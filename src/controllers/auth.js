@@ -1,5 +1,5 @@
 // src/controllers/auth.js
-const Admin = require("../models/Admin");
+const { Admin } = require("../models");
 const { validationResult } = require("express-validator");
 
 // @desc    Register admin
@@ -20,7 +20,7 @@ exports.register = async (req, res, next) => {
     const { name, email, password, role } = req.body;
 
     // Check if admin already exists
-    const existingAdmin = await Admin.findOne({ email });
+    const existingAdmin = await Admin.findOne({ where: { email } });
     if (existingAdmin) {
       return res.status(400).json({
         success: false,
@@ -44,7 +44,7 @@ exports.register = async (req, res, next) => {
       message: "Admin created successfully",
       token,
       data: {
-        id: admin._id,
+        id: admin.id,
         name: admin.name,
         email: admin.email,
         role: admin.role,
@@ -72,8 +72,10 @@ exports.login = async (req, res, next) => {
 
     const { email, password } = req.body;
 
-    // Check for admin
-    const admin = await Admin.findOne({ email }).select("+password");
+    // Check for admin with password included
+    const admin = await Admin.scope("withPassword").findOne({
+      where: { email },
+    });
 
     if (!admin) {
       return res.status(401).json({
@@ -101,8 +103,7 @@ exports.login = async (req, res, next) => {
     }
 
     // Update last login
-    admin.lastLogin = Date.now();
-    await admin.save({ validateBeforeSave: false });
+    await admin.update({ lastLogin: new Date() });
 
     // Create token
     const token = admin.getSignedJwtToken();
@@ -112,7 +113,7 @@ exports.login = async (req, res, next) => {
       message: "Login successful",
       token,
       data: {
-        id: admin._id,
+        id: admin.id,
         name: admin.name,
         email: admin.email,
         role: admin.role,
@@ -129,7 +130,7 @@ exports.login = async (req, res, next) => {
 // @access  Private
 exports.getMe = async (req, res, next) => {
   try {
-    const admin = await Admin.findById(req.admin.id);
+    const admin = await Admin.findByPk(req.admin.id);
 
     res.status(200).json({
       success: true,
@@ -150,15 +151,12 @@ exports.updateProfile = async (req, res, next) => {
       email: req.body.email,
     };
 
-    const admin = await Admin.findByIdAndUpdate(req.admin.id, fieldsToUpdate, {
-      new: true,
-      runValidators: true,
-    });
+    await req.admin.update(fieldsToUpdate);
 
     res.status(200).json({
       success: true,
       message: "Profile updated successfully",
-      data: admin,
+      data: req.admin,
     });
   } catch (error) {
     next(error);
@@ -170,7 +168,7 @@ exports.updateProfile = async (req, res, next) => {
 // @access  Private
 exports.updatePassword = async (req, res, next) => {
   try {
-    const admin = await Admin.findById(req.admin.id).select("+password");
+    const admin = await Admin.scope("withPassword").findByPk(req.admin.id);
 
     // Check current password
     if (!(await admin.matchPassword(req.body.currentPassword))) {
@@ -180,9 +178,10 @@ exports.updatePassword = async (req, res, next) => {
       });
     }
 
-    admin.password = req.body.newPassword;
-    admin.passwordChangedAt = Date.now();
-    await admin.save();
+    await admin.update({
+      password: req.body.newPassword,
+      passwordChangedAt: new Date(),
+    });
 
     const token = admin.getSignedJwtToken();
 

@@ -1,22 +1,27 @@
 // src/server.js
 const dotenv = require("dotenv");
-const colors = require("colors");
+require("colors");
 
 // Load env vars
 dotenv.config();
 
 // Import dependencies
-const connectDB = require("./config/database");
+const { connectDB } = require("./config/database");
 const app = require("./app");
-const Admin = require("./models/Admin");
+const { Admin } = require("./models");
 
 // Connect to database
-connectDB();
+connectDB().then(async () => {
+  // Create default super admin if not exists
+  await createDefaultAdmin();
+});
 
 // Create default super admin if not exists
 const createDefaultAdmin = async () => {
   try {
-    const adminExists = await Admin.findOne({ role: "super-admin" });
+    const adminExists = await Admin.findOne({
+      where: { role: "super-admin" },
+    });
 
     if (!adminExists) {
       const defaultAdmin = await Admin.create({
@@ -32,14 +37,13 @@ const createDefaultAdmin = async () => {
         `Password: ${process.env.ADMIN_PASSWORD || "AdminPassword123!"}`.yellow
       );
       console.log("Please change the password after first login!".red.bold);
+    } else {
+      console.log("Super admin already exists".cyan);
     }
   } catch (error) {
     console.error("Error creating default admin:", error.message);
   }
 };
-
-// Create default admin
-createDefaultAdmin();
 
 const PORT = process.env.PORT || 5000;
 
@@ -47,7 +51,7 @@ const server = app.listen(PORT, () => {
   console.log(
     `Server running in ${process.env.NODE_ENV} mode on port ${PORT}`.yellow.bold
   );
-  console.log(`API Documentation: http://localhost:${PORT}/api/health`.cyan);
+  console.log(`Health Check: http://localhost:${PORT}/api/health`.cyan);
 });
 
 // Handle unhandled promise rejections
