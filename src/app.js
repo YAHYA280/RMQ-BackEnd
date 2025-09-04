@@ -1,4 +1,4 @@
-// src/app.js - Updated with complete setup
+// src/app.js - Updated CORS configuration for frontend auth
 const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
@@ -14,6 +14,8 @@ const { protect } = require("./middleware/auth");
 // Route files
 const auth = require("./routes/auth");
 const vehicles = require("./routes/vehicles");
+const customers = require("./routes/customers");
+const bookings = require("./routes/bookings");
 
 const app = express();
 
@@ -27,7 +29,7 @@ app.use(
   })
 );
 
-// CORS middleware
+// CORS middleware - Updated for frontend auth
 app.use(
   cors({
     origin: function (origin, callback) {
@@ -129,6 +131,8 @@ if (process.env.NODE_ENV === "production") {
 // API Routes
 app.use("/api/auth", auth);
 app.use("/api/vehicles", vehicles);
+app.use("/api/customers", customers);
+app.use("/api/bookings", bookings);
 
 // Health check endpoint
 app.get("/api/health", (req, res) => {
@@ -164,6 +168,15 @@ app.get("/api", (req, res) => {
           delete: "DELETE /api/customers/:id (super-admin only)",
           search: "GET /api/customers/search (admin only)",
           stats: "GET /api/customers/stats (admin only)",
+        },
+        vehicles: {
+          getAll: "GET /api/vehicles",
+          getOne: "GET /api/vehicles/:id",
+          create: "POST /api/vehicles (admin only)",
+          update: "PUT /api/vehicles/:id (admin only)",
+          delete: "DELETE /api/vehicles/:id (admin only)",
+          stats: "GET /api/vehicles/stats (admin only)",
+          availability: "GET /api/vehicles/availability",
         },
         bookings: {
           getAll: "GET /api/bookings",

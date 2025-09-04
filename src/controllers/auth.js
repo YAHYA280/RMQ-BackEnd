@@ -1,4 +1,4 @@
-// src/controllers/auth.js - Complete implementation
+// src/controllers/auth.js - Fixed implementation
 const { Admin } = require("../models/index");
 const { validationResult } = require("express-validator");
 const asyncHandler = require("../middleware/asyncHandler");
@@ -92,18 +92,19 @@ exports.login = asyncHandler(async (req, res, next) => {
   // Create token
   const token = admin.getSignedJwtToken();
 
-  // Set cookie options
+  // FIXED: Cookie options with proper date format
+  const cookieExpire = process.env.JWT_COOKIE_EXPIRE || 30; // days
   const options = {
-    expires: new Date(
-      Date.now() + process.env.JWT_COOKIE_EXPIRE * 24 * 60 * 60 * 1000
-    ),
+    expires: new Date(Date.now() + cookieExpire * 24 * 60 * 60 * 1000), // Convert to milliseconds
     httpOnly: true,
   };
 
   if (process.env.NODE_ENV === "production") {
     options.secure = true;
+    options.sameSite = "strict";
   }
 
+  // Send response with token
   res
     .status(200)
     .cookie("token", token, options)
