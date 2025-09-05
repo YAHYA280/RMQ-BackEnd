@@ -1,47 +1,12 @@
-// src/middleware/upload.js - Updated with better error handling
+// src/middleware/upload.js - Updated with memory storage for BYTEA
 const multer = require("multer");
 const path = require("path");
-const fs = require("fs");
 
-// Ensure upload directories exist
-const ensureDirectoryExists = (dirPath) => {
-  if (!fs.existsSync(dirPath)) {
-    fs.mkdirSync(dirPath, { recursive: true });
-  }
-};
+// CHANGED: Using memory storage instead of disk storage
+// This stores files in memory as Buffer objects, which we can directly save to PostgreSQL as BYTEA
+const memoryStorage = multer.memoryStorage();
 
-// Create multer storage for vehicles
-const vehicleStorage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const uploadPath = path.join(__dirname, "../uploads/vehicles");
-    ensureDirectoryExists(uploadPath);
-    cb(null, uploadPath);
-  },
-  filename: (req, file, cb) => {
-    // Create unique filename: timestamp-random-originalname
-    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    const extension = path.extname(file.originalname);
-    const filename = `vehicle-${uniqueSuffix}${extension}`;
-    cb(null, filename);
-  },
-});
-
-// Create multer storage for customers (driver licenses)
-const customerStorage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const uploadPath = path.join(__dirname, "../uploads/customers");
-    ensureDirectoryExists(uploadPath);
-    cb(null, uploadPath);
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    const extension = path.extname(file.originalname);
-    const filename = `license-${uniqueSuffix}${extension}`;
-    cb(null, filename);
-  },
-});
-
-// File filter for images
+// File filter for images (same as before)
 const imageFileFilter = (req, file, cb) => {
   // Check file type
   if (file.mimetype.startsWith("image/")) {
@@ -64,9 +29,9 @@ const imageFileFilter = (req, file, cb) => {
   }
 };
 
-// Create multer upload instances
+// UPDATED: Create multer upload instances with memory storage
 const vehicleUpload = multer({
-  storage: vehicleStorage,
+  storage: memoryStorage, // CHANGED: Using memory storage
   limits: {
     fileSize: parseInt(process.env.MAX_FILE_SIZE) || 10 * 1024 * 1024, // 10MB default
     files: 6, // 1 main image + 5 additional images
@@ -75,7 +40,7 @@ const vehicleUpload = multer({
 });
 
 const customerUpload = multer({
-  storage: customerStorage,
+  storage: memoryStorage, // CHANGED: Using memory storage
   limits: {
     fileSize: parseInt(process.env.MAX_FILE_SIZE) || 10 * 1024 * 1024, // 10MB default
     files: 1,
@@ -98,31 +63,10 @@ exports.uploadDriverLicense = customerUpload.single("driverLicenseImage");
 // Middleware for any single image
 exports.uploadSingleImage = vehicleUpload.single("image");
 
-// Generic upload for any file type (be careful with this)
-const genericStorage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const uploadPath = path.join(__dirname, "../uploads/misc");
-    ensureDirectoryExists(uploadPath);
-    cb(null, uploadPath);
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    const extension = path.extname(file.originalname);
-    const filename = `file-${uniqueSuffix}${extension}`;
-    cb(null, filename);
-  },
-});
+// REMOVED: Generic file upload and disk storage configurations
+// We no longer need disk storage since everything goes to database
 
-const genericUpload = multer({
-  storage: genericStorage,
-  limits: {
-    fileSize: parseInt(process.env.MAX_FILE_SIZE) || 10 * 1024 * 1024, // 10MB default
-  },
-});
-
-exports.uploadGeneric = genericUpload.single("file");
-
-// Error handling middleware for multer
+// Error handling middleware for multer (same as before)
 exports.handleUploadError = (err, req, res, next) => {
   if (err instanceof multer.MulterError) {
     let message = "Upload error";
@@ -176,51 +120,9 @@ exports.handleUploadError = (err, req, res, next) => {
   next(err);
 };
 
-// Utility function to delete uploaded files (in case of error)
-exports.cleanupUploadedFiles = (files) => {
-  if (!files) return;
+// REMOVED: File cleanup functions since we no longer save to disk
 
-  const filesToDelete = [];
-
-  // Handle single file
-  if (files.path) {
-    filesToDelete.push(files.path);
-  }
-
-  // Handle multiple files from multer
-  if (files.mainImage) {
-    filesToDelete.push(...files.mainImage.map((file) => file.path));
-  }
-
-  if (files.additionalImages) {
-    filesToDelete.push(...files.additionalImages.map((file) => file.path));
-  }
-
-  if (files.driverLicenseImage) {
-    filesToDelete.push(...files.driverLicenseImage.map((file) => file.path));
-  }
-
-  // Handle array of files
-  if (Array.isArray(files)) {
-    filesToDelete.push(...files.map((file) => file.path));
-  }
-
-  // Delete files
-  filesToDelete.forEach((filePath) => {
-    if (fs.existsSync(filePath)) {
-      try {
-        fs.unlinkSync(filePath);
-      } catch (error) {
-        console.warn(
-          `Warning: Could not delete file ${filePath}:`,
-          error.message
-        );
-      }
-    }
-  });
-};
-
-// Middleware to validate uploaded images
+// Middleware to validate uploaded images (updated for memory storage)
 exports.validateImages = (req, res, next) => {
   const errors = [];
 
@@ -231,6 +133,10 @@ exports.validateImages = (req, res, next) => {
       if (file.size === 0) {
         errors.push("Main image file is empty");
       }
+      // With memory storage, we have access to file.buffer
+      if (!file.buffer || file.buffer.length === 0) {
+        errors.push("Main image data is corrupted");
+      }
     }
 
     // Check additional images
@@ -238,6 +144,9 @@ exports.validateImages = (req, res, next) => {
       req.files.additionalImages.forEach((file, index) => {
         if (file.size === 0) {
           errors.push(`Additional image ${index + 1} is empty`);
+        }
+        if (!file.buffer || file.buffer.length === 0) {
+          errors.push(`Additional image ${index + 1} data is corrupted`);
         }
       });
     }
@@ -248,13 +157,13 @@ exports.validateImages = (req, res, next) => {
       if (file.size === 0) {
         errors.push("Driver license image file is empty");
       }
+      if (!file.buffer || file.buffer.length === 0) {
+        errors.push("Driver license image data is corrupted");
+      }
     }
   }
 
   if (errors.length > 0) {
-    // Clean up uploaded files
-    exports.cleanupUploadedFiles(req.files);
-
     return res.status(400).json({
       success: false,
       message: "Invalid uploaded files",

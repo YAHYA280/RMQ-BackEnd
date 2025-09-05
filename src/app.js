@@ -1,4 +1,4 @@
-// src/app.js - Updated CORS configuration for frontend auth
+// src/app.js - Updated with increased request limits for image handling
 const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
@@ -21,6 +21,23 @@ const app = express();
 
 // Trust proxy for production
 app.set("trust proxy", 1);
+
+// ADDED: Increase server limits for image handling
+app.use(
+  express.json({
+    limit: "50mb", // Increased from 10mb to 50mb for base64 images
+    strict: true,
+    parameterLimit: 50000, // Increased parameter limit
+  })
+);
+
+app.use(
+  express.urlencoded({
+    extended: true,
+    limit: "50mb", // Increased from 10mb to 50mb
+    parameterLimit: 50000, // Increased parameter limit
+  })
+);
 
 // Security middleware
 app.use(
@@ -70,21 +87,6 @@ app.use(cookieParser());
 // Compression middleware
 app.use(compression());
 
-// Body parser middleware
-app.use(
-  express.json({
-    limit: "10mb",
-    strict: true,
-  })
-);
-app.use(
-  express.urlencoded({
-    extended: true,
-    limit: "10mb",
-    parameterLimit: 1000,
-  })
-);
-
 // Logging middleware
 if (process.env.NODE_ENV === "development") {
   app.use(morgan("combined"));
@@ -92,14 +94,8 @@ if (process.env.NODE_ENV === "development") {
   app.use(morgan("common"));
 }
 
-// Set static folder for file uploads
-app.use(
-  "/uploads",
-  express.static(path.join(__dirname, "../uploads"), {
-    maxAge: process.env.NODE_ENV === "production" ? "1y" : 0,
-    etag: true,
-  })
-);
+// REMOVED: Static folder serving since we're using database storage
+// app.use("/uploads", express.static(...));
 
 // Rate limiting for production
 if (process.env.NODE_ENV === "production") {

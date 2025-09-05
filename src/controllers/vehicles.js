@@ -1,9 +1,7 @@
-// src/controllers/vehicles.js - Complete Clean Implementation
+// src/controllers/vehicles.js - Updated with BYTEA Image Storage
 const { Vehicle, Admin } = require("../models");
 const { validationResult } = require("express-validator");
 const { Op } = require("sequelize");
-const path = require("path");
-const fs = require("fs").promises;
 const asyncHandler = require("../middleware/asyncHandler");
 const ErrorResponse = require("../utils/errorResponse");
 
@@ -30,6 +28,40 @@ const getBrands = asyncHandler(async (req, res, next) => {
     data: brands,
   });
 });
+
+// Helper function to process uploaded images and convert to BYTEA
+const processImageForStorage = (file) => {
+  if (!file) return null;
+
+  return {
+    data: file.buffer,
+    mimetype: file.mimetype,
+    name: file.originalname,
+    size: file.size,
+  };
+};
+
+// Helper function to transform vehicle data for frontend
+const transformVehicleForResponse = (vehicle) => {
+  const vehicleData = vehicle.toJSON();
+
+  // Convert main image BYTEA to data URL
+  if (vehicle.mainImageData && vehicle.mainImageMimetype) {
+    vehicleData.image = vehicle.getMainImageDataUrl();
+    vehicleData.mainImage = {
+      dataUrl: vehicleData.image,
+      mimetype: vehicle.mainImageMimetype,
+      name: vehicle.mainImageName || "main-image",
+    };
+  } else {
+    vehicleData.image = "/cars/car1.jpg"; // Fallback
+  }
+
+  // Convert additional images BYTEA to data URLs
+  vehicleData.images = vehicle.getAdditionalImagesDataUrls();
+
+  return vehicleData;
+};
 
 // @desc    Get all vehicles with advanced filtering and pagination
 // @route   GET /api/vehicles
@@ -97,20 +129,6 @@ const getVehicles = asyncHandler(async (req, res, next) => {
     ];
   }
 
-  // Handle other filters (for future extensions)
-  Object.keys(otherFilters).forEach((key) => {
-    const value = otherFilters[key];
-    if (typeof value === "string" && value.includes("[")) {
-      // Handle operators like price[gte]=100
-      const matches = value.match(/(.+)\[(\w+)\]/);
-      if (matches) {
-        const [, field, operator] = matches;
-        if (!where[field]) where[field] = {};
-        where[field][Op[operator]] = otherFilters[key];
-      }
-    }
-  });
-
   // Build order clause
   let order = [["createdAt", "DESC"]];
   if (sort) {
@@ -150,30 +168,8 @@ const getVehicles = asyncHandler(async (req, res, next) => {
     ],
   });
 
-  // Transform image paths for frontend
-  const transformedVehicles = vehicles.map((vehicle) => {
-    const vehicleData = vehicle.toJSON();
-
-    // Ensure mainImage path is properly formatted
-    if (vehicleData.mainImage && vehicleData.mainImage.path) {
-      vehicleData.mainImage.fullPath = `${
-        process.env.API_URL || "http://localhost:5000"
-      }${vehicleData.mainImage.path}`;
-      vehicleData.image = vehicleData.mainImage.fullPath;
-    }
-
-    // Transform additional images
-    if (vehicleData.images && Array.isArray(vehicleData.images)) {
-      vehicleData.images = vehicleData.images.map((img) => ({
-        ...img,
-        fullPath: `${process.env.API_URL || "http://localhost:5000"}${
-          img.path
-        }`,
-      }));
-    }
-
-    return vehicleData;
-  });
+  // Transform vehicles for frontend (convert BYTEA to data URLs)
+  const transformedVehicles = vehicles.map(transformVehicleForResponse);
 
   // Build pagination result
   const pagination = {};
@@ -223,22 +219,8 @@ const getVehicle = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse("Vehicle not found", 404));
   }
 
-  // Transform image paths
-  const vehicleData = vehicle.toJSON();
-
-  if (vehicleData.mainImage && vehicleData.mainImage.path) {
-    vehicleData.mainImage.fullPath = `${
-      process.env.API_URL || "http://localhost:5000"
-    }${vehicleData.mainImage.path}`;
-    vehicleData.image = vehicleData.mainImage.fullPath;
-  }
-
-  if (vehicleData.images && Array.isArray(vehicleData.images)) {
-    vehicleData.images = vehicleData.images.map((img) => ({
-      ...img,
-      fullPath: `${process.env.API_URL || "http://localhost:5000"}${img.path}`,
-    }));
-  }
+  // Transform vehicle data for frontend
+  const vehicleData = transformVehicleForResponse(vehicle);
 
   res.status(200).json({
     success: true,
@@ -259,40 +241,41 @@ const createVehicle = asyncHandler(async (req, res, next) => {
   // Add admin to req.body
   req.body.createdById = req.admin.id;
 
-  // Handle file uploads
-  const images = [];
-  let mainImage = null;
+  // Process uploaded images
+  let mainImageData = null;
+  let mainImageMimetype = null;
+  let mainImageName = null;
+  let additionalImagesData = [];
 
   if (req.files) {
     // Handle main image
     if (req.files.mainImage && req.files.mainImage[0]) {
       const file = req.files.mainImage[0];
-      mainImage = {
-        filename: file.filename,
-        originalName: file.originalname,
-        path: `/uploads/vehicles/${file.filename}`,
-        size: file.size,
-        mimetype: file.mimetype,
-      };
+      mainImageData = file.buffer;
+      mainImageMimetype = file.mimetype;
+      mainImageName = file.originalname;
     }
 
     // Handle additional images
     if (req.files.additionalImages) {
-      req.files.additionalImages.forEach((file) => {
-        images.push({
-          filename: file.filename,
-          originalName: file.originalname,
-          path: `/uploads/vehicles/${file.filename}`,
-          size: file.size,
-          mimetype: file.mimetype,
-        });
-      });
+      additionalImagesData = req.files.additionalImages.map((file) => ({
+        data: file.buffer,
+        mimetype: file.mimetype,
+        name: file.originalname,
+      }));
     }
   }
 
-  // Add images to vehicle data
-  if (mainImage) req.body.mainImage = mainImage;
-  if (images.length > 0) req.body.images = images;
+  // Add image data to vehicle data
+  if (mainImageData) {
+    req.body.mainImageData = mainImageData;
+    req.body.mainImageMimetype = mainImageMimetype;
+    req.body.mainImageName = mainImageName;
+  }
+
+  if (additionalImagesData.length > 0) {
+    req.body.additionalImagesData = additionalImagesData;
+  }
 
   // Create vehicle
   const vehicle = await Vehicle.create(req.body);
@@ -308,10 +291,13 @@ const createVehicle = asyncHandler(async (req, res, next) => {
     ],
   });
 
+  // Transform for response
+  const responseData = transformVehicleForResponse(createdVehicle);
+
   res.status(201).json({
     success: true,
     message: "Vehicle created successfully",
-    data: createdVehicle,
+    data: responseData,
   });
 });
 
@@ -341,70 +327,29 @@ const updateVehicle = asyncHandler(async (req, res, next) => {
     );
   }
 
-  // Handle file uploads
-  const oldImages = {
-    mainImage: vehicle.mainImage,
-    images: vehicle.images || [],
-  };
-
+  // Process uploaded images if any
   if (req.files) {
     // Handle main image update
     if (req.files.mainImage && req.files.mainImage[0]) {
       const file = req.files.mainImage[0];
-      req.body.mainImage = {
-        filename: file.filename,
-        originalName: file.originalname,
-        path: `/uploads/vehicles/${file.filename}`,
-        size: file.size,
-        mimetype: file.mimetype,
-      };
+      req.body.mainImageData = file.buffer;
+      req.body.mainImageMimetype = file.mimetype;
+      req.body.mainImageName = file.originalname;
     }
 
     // Handle additional images update
     if (req.files.additionalImages) {
-      const newImages = [];
-      req.files.additionalImages.forEach((file) => {
-        newImages.push({
-          filename: file.filename,
-          originalName: file.originalname,
-          path: `/uploads/vehicles/${file.filename}`,
-          size: file.size,
-          mimetype: file.mimetype,
-        });
-      });
-      req.body.images = newImages;
+      const newImages = req.files.additionalImages.map((file) => ({
+        data: file.buffer,
+        mimetype: file.mimetype,
+        name: file.originalname,
+      }));
+      req.body.additionalImagesData = newImages;
     }
   }
 
   // Update vehicle
   await vehicle.update(req.body);
-
-  // Clean up old images if new ones were uploaded
-  try {
-    if (req.files?.mainImage && oldImages.mainImage?.filename) {
-      const oldPath = path.join(
-        __dirname,
-        "../uploads/vehicles",
-        oldImages.mainImage.filename
-      );
-      await fs.unlink(oldPath).catch(() => {}); // Ignore errors
-    }
-
-    if (req.files?.additionalImages && oldImages.images?.length > 0) {
-      for (const img of oldImages.images) {
-        if (img.filename) {
-          const oldPath = path.join(
-            __dirname,
-            "../uploads/vehicles",
-            img.filename
-          );
-          await fs.unlink(oldPath).catch(() => {}); // Ignore errors
-        }
-      }
-    }
-  } catch (error) {
-    console.warn("Warning: Could not delete old images:", error.message);
-  }
 
   // Fetch updated vehicle with associations
   const updatedVehicle = await Vehicle.findByPk(req.params.id, {
@@ -417,10 +362,13 @@ const updateVehicle = asyncHandler(async (req, res, next) => {
     ],
   });
 
+  // Transform for response
+  const responseData = transformVehicleForResponse(updatedVehicle);
+
   res.status(200).json({
     success: true,
     message: "Vehicle updated successfully",
-    data: updatedVehicle,
+    data: responseData,
   });
 });
 
@@ -462,35 +410,7 @@ const deleteVehicle = asyncHandler(async (req, res, next) => {
     );
   }
 
-  // Delete associated images
-  const imagesToDelete = [];
-
-  if (vehicle.mainImage && vehicle.mainImage.filename) {
-    imagesToDelete.push(vehicle.mainImage.filename);
-  }
-
-  if (vehicle.images && vehicle.images.length > 0) {
-    vehicle.images.forEach((img) => {
-      if (img.filename) {
-        imagesToDelete.push(img.filename);
-      }
-    });
-  }
-
-  // Delete image files
-  for (const filename of imagesToDelete) {
-    try {
-      const imagePath = path.join(__dirname, "../uploads/vehicles", filename);
-      await fs.unlink(imagePath);
-    } catch (error) {
-      console.warn(
-        `Warning: Could not delete image ${filename}:`,
-        error.message
-      );
-    }
-  }
-
-  // Delete vehicle from database
+  // Delete vehicle from database (images are automatically deleted with the record)
   await vehicle.destroy();
 
   res.status(200).json({
@@ -529,50 +449,29 @@ const uploadVehicleImages = asyncHandler(async (req, res, next) => {
   // Handle main image
   if (req.files.mainImage && req.files.mainImage[0]) {
     const file = req.files.mainImage[0];
-    updateData.mainImage = {
-      filename: file.filename,
-      originalName: file.originalname,
-      path: `/uploads/vehicles/${file.filename}`,
-      size: file.size,
-      mimetype: file.mimetype,
-    };
-
-    // Delete old main image
-    if (vehicle.mainImage?.filename) {
-      try {
-        const oldPath = path.join(
-          __dirname,
-          "../uploads/vehicles",
-          vehicle.mainImage.filename
-        );
-        await fs.unlink(oldPath);
-      } catch (error) {
-        console.warn(
-          "Warning: Could not delete old main image:",
-          error.message
-        );
-      }
-    }
+    updateData.mainImageData = file.buffer;
+    updateData.mainImageMimetype = file.mimetype;
+    updateData.mainImageName = file.originalname;
   }
 
   // Handle additional images
   if (req.files.additionalImages) {
-    const images = [];
-    req.files.additionalImages.forEach((file) => {
-      images.push({
-        filename: file.filename,
-        originalName: file.originalname,
-        path: `/uploads/vehicles/${file.filename}`,
-        size: file.size,
-        mimetype: file.mimetype,
-      });
-    });
+    const images = req.files.additionalImages.map((file) => ({
+      data: file.buffer,
+      mimetype: file.mimetype,
+      name: file.originalname,
+    }));
 
-    updateData.images = [...(vehicle.images || []), ...images];
+    // Merge with existing images or replace
+    updateData.additionalImagesData = [
+      ...(vehicle.additionalImagesData || []),
+      ...images,
+    ];
 
     // Limit to maximum 10 images total
-    if (updateData.images.length > 10) {
-      updateData.images = updateData.images.slice(-10);
+    if (updateData.additionalImagesData.length > 10) {
+      updateData.additionalImagesData =
+        updateData.additionalImagesData.slice(-10);
     }
   }
 
@@ -588,10 +487,13 @@ const uploadVehicleImages = asyncHandler(async (req, res, next) => {
     ],
   });
 
+  // Transform for response
+  const responseData = transformVehicleForResponse(updatedVehicle);
+
   res.status(200).json({
     success: true,
     message: "Vehicle images uploaded successfully",
-    data: updatedVehicle,
+    data: responseData,
   });
 });
 
@@ -619,34 +521,18 @@ const removeVehicleImage = asyncHandler(async (req, res, next) => {
   }
 
   if (
-    !vehicle.images ||
-    imageIndexNum >= vehicle.images.length ||
+    !vehicle.additionalImagesData ||
+    imageIndexNum >= vehicle.additionalImagesData.length ||
     imageIndexNum < 0
   ) {
     return next(new ErrorResponse("Image not found", 404));
   }
 
-  const imageToDelete = vehicle.images[imageIndexNum];
-
-  // Delete physical file
-  try {
-    if (imageToDelete.filename) {
-      const imagePath = path.join(
-        __dirname,
-        "../uploads/vehicles",
-        imageToDelete.filename
-      );
-      await fs.unlink(imagePath);
-    }
-  } catch (error) {
-    console.warn("Warning: Could not delete image file:", error.message);
-  }
-
   // Remove image from array
-  const updatedImages = vehicle.images.filter(
+  const updatedImages = vehicle.additionalImagesData.filter(
     (_, index) => index !== imageIndexNum
   );
-  await vehicle.update({ images: updatedImages });
+  await vehicle.update({ additionalImagesData: updatedImages });
 
   res.status(200).json({
     success: true,
@@ -722,16 +608,12 @@ const getVehicleStats = asyncHandler(async (req, res, next) => {
     },
   });
 
-  // Calculate revenue (you'd need booking data for accurate revenue)
-  const monthlyRevenue = 0; // Placeholder - implement when bookings are ready
-
   res.status(200).json({
     success: true,
     data: {
       overview: {
         ...overallStats[0],
         maintenanceDue,
-        monthlyRevenue,
       },
       brandBreakdown: brandStats,
     },
@@ -766,10 +648,15 @@ const getAvailableVehicles = asyncHandler(async (req, res, next) => {
       endDate
     );
 
+    // Transform vehicles for response
+    const transformedVehicles = availableVehicles.map(
+      transformVehicleForResponse
+    );
+
     res.status(200).json({
       success: true,
-      count: availableVehicles.length,
-      data: availableVehicles,
+      count: transformedVehicles.length,
+      data: transformedVehicles,
       searchCriteria: {
         startDate,
         endDate,

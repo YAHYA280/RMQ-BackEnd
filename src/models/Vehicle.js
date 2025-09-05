@@ -1,4 +1,4 @@
-// src/models/Vehicle.js - Updated with WhatsApp validation and no location field
+// src/models/Vehicle.js - Updated with BYTEA image storage
 const { DataTypes } = require("sequelize");
 const { sequelize } = require("../config/database");
 
@@ -85,7 +85,6 @@ const Vehicle = sequelize.define(
       type: DataTypes.STRING(15),
       allowNull: false,
       validate: {
-        // Updated to match 06 XX XX XX XX format (10 digits starting with 06 or 07)
         is: /^0[67]\d{8}$/,
       },
     },
@@ -155,13 +154,24 @@ const Vehicle = sequelize.define(
         },
       },
     },
-    mainImage: {
-      type: DataTypes.JSONB,
-      defaultValue: null,
+    // Updated image storage - using BYTEA instead of JSONB
+    mainImageData: {
+      type: DataTypes.BLOB("long"), // For PostgreSQL, this becomes BYTEA
+      allowNull: true,
     },
-    images: {
-      type: DataTypes.ARRAY(DataTypes.JSONB),
+    mainImageMimetype: {
+      type: DataTypes.STRING(100),
+      allowNull: true,
+    },
+    mainImageName: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+    },
+    // Additional images stored as JSONB array of image objects
+    additionalImagesData: {
+      type: DataTypes.JSONB,
       defaultValue: [],
+      // Structure: [{ data: Buffer, mimetype: string, name: string }, ...]
     },
     lastTechnicalVisit: {
       type: DataTypes.DATEONLY,
@@ -242,6 +252,46 @@ Vehicle.prototype.updateRating = async function (newRating) {
   return this;
 };
 
+// Get main image as base64 data URL for frontend
+Vehicle.prototype.getMainImageDataUrl = function () {
+  if (this.mainImageData && this.mainImageMimetype) {
+    const base64 = this.mainImageData.toString("base64");
+    return `data:${this.mainImageMimetype};base64,${base64}`;
+  }
+  return null;
+};
+
+// Get additional images as base64 data URLs
+Vehicle.prototype.getAdditionalImagesDataUrls = function () {
+  if (!this.additionalImagesData || !Array.isArray(this.additionalImagesData)) {
+    return [];
+  }
+
+  return this.additionalImagesData
+    .map((imageObj) => {
+      if (imageObj.data && imageObj.mimetype) {
+        // Convert Buffer back from JSON representation
+        const buffer = Buffer.from(imageObj.data);
+        const base64 = buffer.toString("base64");
+        return {
+          dataUrl: `data:${imageObj.mimetype};base64,${base64}`,
+          name: imageObj.name || "image",
+        };
+      }
+      return null;
+    })
+    .filter(Boolean);
+};
+
+// Static method to store image data
+Vehicle.storeImageData = function (imageBuffer, mimetype, name) {
+  return {
+    data: imageBuffer,
+    mimetype: mimetype,
+    name: name,
+  };
+};
+
 // Class methods
 Vehicle.getAvailableForDateRange = async function (
   startDate,
@@ -261,7 +311,7 @@ Vehicle.getAvailableForDateRange = async function (
     include: [
       {
         model: Booking,
-        as: "vehicleBookings", // Using the correct association alias
+        as: "vehicleBookings",
         where: {
           status: ["confirmed", "active"],
           [require("sequelize").Op.or]: [
