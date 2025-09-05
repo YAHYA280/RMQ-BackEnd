@@ -75,8 +75,8 @@ exports.validateVehicle = [
     .trim()
     .notEmpty()
     .withMessage("Vehicle name is required")
-    .isLength({ min: 1, max: 50 })
-    .withMessage("Vehicle name must be between 1 and 50 characters"),
+    .isLength({ min: 1, max: 100 })
+    .withMessage("Vehicle name must be between 1 and 100 characters"),
 
   body("brand")
     .isIn([
@@ -185,8 +185,8 @@ exports.validateVehicleUpdate = [
     .trim()
     .notEmpty()
     .withMessage("Vehicle name cannot be empty")
-    .isLength({ min: 1, max: 50 })
-    .withMessage("Vehicle name must be between 1 and 50 characters"),
+    .isLength({ min: 1, max: 100 })
+    .withMessage("Vehicle name must be between 1 and 100 characters"),
 
   body("brand")
     .optional()
@@ -260,11 +260,6 @@ exports.validateVehicleUpdate = [
     .isInt({ min: 0 })
     .withMessage("Mileage must be a positive number"),
 
-  body("features")
-    .optional()
-    .isArray()
-    .withMessage("Features must be an array"),
-
   body("available")
     .optional()
     .isBoolean()
@@ -286,7 +281,6 @@ exports.validateVehicleUpdate = [
     .isISO8601()
     .withMessage("Please enter a valid date for last oil change"),
 ];
-
 // Customer validation
 exports.validateCustomer = [
   body("firstName")
