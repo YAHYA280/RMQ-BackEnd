@@ -1,4 +1,4 @@
-// src/controllers/vehicles.js - Complete and Fixed Implementation
+// src/controllers/vehicles.js - Complete Clean Implementation
 const { Vehicle, Admin } = require("../models");
 const { validationResult } = require("express-validator");
 const { Op } = require("sequelize");
@@ -7,10 +7,34 @@ const fs = require("fs").promises;
 const asyncHandler = require("../middleware/asyncHandler");
 const ErrorResponse = require("../utils/errorResponse");
 
+// @desc    Get available brands
+// @route   GET /api/vehicles/brands
+// @access  Public
+const getBrands = asyncHandler(async (req, res, next) => {
+  const brands = [
+    "Cupra",
+    "Dacia",
+    "Hyundai",
+    "KIA",
+    "Mercedes",
+    "Opel",
+    "Peugeot",
+    "Porsche",
+    "Renault",
+    "SEAT",
+    "Volkswagen",
+  ];
+
+  res.status(200).json({
+    success: true,
+    data: brands,
+  });
+});
+
 // @desc    Get all vehicles with advanced filtering and pagination
 // @route   GET /api/vehicles
 // @access  Public
-exports.getVehicles = asyncHandler(async (req, res, next) => {
+const getVehicles = asyncHandler(async (req, res, next) => {
   // Extract query parameters
   const {
     select,
@@ -21,7 +45,6 @@ exports.getVehicles = asyncHandler(async (req, res, next) => {
     transmission,
     fuelType,
     available,
-    location,
     minPrice,
     maxPrice,
     seats,
@@ -48,9 +71,6 @@ exports.getVehicles = asyncHandler(async (req, res, next) => {
   if (available !== undefined) {
     where.available = available === "true";
   }
-  if (location) {
-    where.location = Array.isArray(location) ? { [Op.in]: location } : location;
-  }
   if (seats) {
     where.seats = Array.isArray(seats) ? { [Op.in]: seats } : seats;
   }
@@ -73,7 +93,6 @@ exports.getVehicles = asyncHandler(async (req, res, next) => {
     where[Op.or] = [
       { name: { [Op.iLike]: `%${search}%` } },
       { brand: { [Op.iLike]: `%${search}%` } },
-      { model: { [Op.iLike]: `%${search}%` } },
       { licensePlate: { [Op.iLike]: `%${search}%` } },
     ];
   }
@@ -131,6 +150,31 @@ exports.getVehicles = asyncHandler(async (req, res, next) => {
     ],
   });
 
+  // Transform image paths for frontend
+  const transformedVehicles = vehicles.map((vehicle) => {
+    const vehicleData = vehicle.toJSON();
+
+    // Ensure mainImage path is properly formatted
+    if (vehicleData.mainImage && vehicleData.mainImage.path) {
+      vehicleData.mainImage.fullPath = `${
+        process.env.API_URL || "http://localhost:5000"
+      }${vehicleData.mainImage.path}`;
+      vehicleData.image = vehicleData.mainImage.fullPath;
+    }
+
+    // Transform additional images
+    if (vehicleData.images && Array.isArray(vehicleData.images)) {
+      vehicleData.images = vehicleData.images.map((img) => ({
+        ...img,
+        fullPath: `${process.env.API_URL || "http://localhost:5000"}${
+          img.path
+        }`,
+      }));
+    }
+
+    return vehicleData;
+  });
+
   // Build pagination result
   const pagination = {};
   const totalPages = Math.ceil(count / limitNum);
@@ -154,17 +198,17 @@ exports.getVehicles = asyncHandler(async (req, res, next) => {
 
   res.status(200).json({
     success: true,
-    count: vehicles.length,
+    count: transformedVehicles.length,
     total: count,
     pagination,
-    data: vehicles,
+    data: transformedVehicles,
   });
 });
 
 // @desc    Get single vehicle
 // @route   GET /api/vehicles/:id
 // @access  Public
-exports.getVehicle = asyncHandler(async (req, res, next) => {
+const getVehicle = asyncHandler(async (req, res, next) => {
   const vehicle = await Vehicle.findByPk(req.params.id, {
     include: [
       {
@@ -179,16 +223,33 @@ exports.getVehicle = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse("Vehicle not found", 404));
   }
 
+  // Transform image paths
+  const vehicleData = vehicle.toJSON();
+
+  if (vehicleData.mainImage && vehicleData.mainImage.path) {
+    vehicleData.mainImage.fullPath = `${
+      process.env.API_URL || "http://localhost:5000"
+    }${vehicleData.mainImage.path}`;
+    vehicleData.image = vehicleData.mainImage.fullPath;
+  }
+
+  if (vehicleData.images && Array.isArray(vehicleData.images)) {
+    vehicleData.images = vehicleData.images.map((img) => ({
+      ...img,
+      fullPath: `${process.env.API_URL || "http://localhost:5000"}${img.path}`,
+    }));
+  }
+
   res.status(200).json({
     success: true,
-    data: vehicle,
+    data: vehicleData,
   });
 });
 
 // @desc    Create new vehicle
 // @route   POST /api/vehicles
 // @access  Private (admin/super-admin)
-exports.createVehicle = asyncHandler(async (req, res, next) => {
+const createVehicle = asyncHandler(async (req, res, next) => {
   // Check for validation errors
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
@@ -257,7 +318,7 @@ exports.createVehicle = asyncHandler(async (req, res, next) => {
 // @desc    Update vehicle
 // @route   PUT /api/vehicles/:id
 // @access  Private (owner or super-admin)
-exports.updateVehicle = asyncHandler(async (req, res, next) => {
+const updateVehicle = asyncHandler(async (req, res, next) => {
   // Check for validation errors
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
@@ -366,7 +427,7 @@ exports.updateVehicle = asyncHandler(async (req, res, next) => {
 // @desc    Delete vehicle
 // @route   DELETE /api/vehicles/:id
 // @access  Private (owner or super-admin)
-exports.deleteVehicle = asyncHandler(async (req, res, next) => {
+const deleteVehicle = asyncHandler(async (req, res, next) => {
   const vehicle = await Vehicle.findByPk(req.params.id);
 
   if (!vehicle) {
@@ -442,7 +503,7 @@ exports.deleteVehicle = asyncHandler(async (req, res, next) => {
 // @desc    Upload vehicle images
 // @route   PUT /api/vehicles/:id/images
 // @access  Private (owner or super-admin)
-exports.uploadVehicleImages = asyncHandler(async (req, res, next) => {
+const uploadVehicleImages = asyncHandler(async (req, res, next) => {
   const vehicle = await Vehicle.findByPk(req.params.id);
 
   if (!vehicle) {
@@ -537,7 +598,7 @@ exports.uploadVehicleImages = asyncHandler(async (req, res, next) => {
 // @desc    Remove vehicle image
 // @route   DELETE /api/vehicles/:id/images/:imageIndex
 // @access  Private (owner or super-admin)
-exports.removeVehicleImage = asyncHandler(async (req, res, next) => {
+const removeVehicleImage = asyncHandler(async (req, res, next) => {
   const { id, imageIndex } = req.params;
   const imageIndexNum = parseInt(imageIndex);
 
@@ -597,7 +658,7 @@ exports.removeVehicleImage = asyncHandler(async (req, res, next) => {
 // @desc    Get vehicle statistics
 // @route   GET /api/vehicles/stats
 // @access  Private (admin)
-exports.getVehicleStats = asyncHandler(async (req, res, next) => {
+const getVehicleStats = asyncHandler(async (req, res, next) => {
   const { sequelize } = require("../config/database");
 
   // Get overall stats
@@ -651,24 +712,6 @@ exports.getVehicleStats = asyncHandler(async (req, res, next) => {
     raw: true,
   });
 
-  // Get location stats
-  const locationStats = await Vehicle.findAll({
-    attributes: [
-      "location",
-      [sequelize.fn("COUNT", sequelize.col("id")), "count"],
-      [
-        sequelize.fn(
-          "COUNT",
-          sequelize.literal("CASE WHEN available = true THEN 1 END")
-        ),
-        "available",
-      ],
-    ],
-    where: { status: "active" },
-    group: ["location"],
-    raw: true,
-  });
-
   // Get maintenance due count
   const maintenanceDue = await Vehicle.count({
     where: {
@@ -691,7 +734,6 @@ exports.getVehicleStats = asyncHandler(async (req, res, next) => {
         monthlyRevenue,
       },
       brandBreakdown: brandStats,
-      locationBreakdown: locationStats,
     },
   });
 });
@@ -699,7 +741,7 @@ exports.getVehicleStats = asyncHandler(async (req, res, next) => {
 // @desc    Get available vehicles for date range
 // @route   GET /api/vehicles/availability
 // @access  Public
-exports.getAvailableVehicles = asyncHandler(async (req, res, next) => {
+const getAvailableVehicles = asyncHandler(async (req, res, next) => {
   const { startDate, endDate, location } = req.query;
 
   if (!startDate || !endDate) {
@@ -724,13 +766,6 @@ exports.getAvailableVehicles = asyncHandler(async (req, res, next) => {
       endDate
     );
 
-    // Filter by location if specified
-    if (location) {
-      availableVehicles = availableVehicles.filter(
-        (vehicle) => vehicle.location === location
-      );
-    }
-
     res.status(200).json({
       success: true,
       count: availableVehicles.length,
@@ -749,7 +784,7 @@ exports.getAvailableVehicles = asyncHandler(async (req, res, next) => {
 // @desc    Update vehicle status
 // @route   PUT /api/vehicles/:id/status
 // @access  Private (admin)
-exports.updateVehicleStatus = asyncHandler(async (req, res, next) => {
+const updateVehicleStatus = asyncHandler(async (req, res, next) => {
   const { status } = req.body;
 
   if (!["active", "maintenance", "inactive"].includes(status)) {
@@ -787,3 +822,17 @@ exports.updateVehicleStatus = asyncHandler(async (req, res, next) => {
     data: vehicle,
   });
 });
+
+module.exports = {
+  getBrands,
+  getVehicles,
+  getVehicle,
+  createVehicle,
+  updateVehicle,
+  deleteVehicle,
+  uploadVehicleImages,
+  removeVehicleImage,
+  getVehicleStats,
+  getAvailableVehicles,
+  updateVehicleStatus,
+};

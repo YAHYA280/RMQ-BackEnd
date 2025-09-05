@@ -1,6 +1,7 @@
-// src/routes/vehicles.js - Fixed implementation
+// src/routes/vehicles.js - Complete and Fixed Implementation
 const express = require("express");
 const {
+  getBrands,
   getVehicles,
   getVehicle,
   createVehicle,
@@ -28,6 +29,7 @@ const {
 const router = express.Router();
 
 // Public routes
+router.get("/brands", getBrands);
 router.get("/", validatePagination, optionalAuth, getVehicles);
 router.get("/availability", getAvailableVehicles);
 

@@ -1,4 +1,4 @@
-// src/utils/validation.js - Updated with complete validations
+// src/utils/validation.js - Updated with new WhatsApp validation
 const { body, param, query } = require("express-validator");
 
 // Admin registration validation
@@ -69,7 +69,7 @@ exports.validatePasswordUpdate = [
     ),
 ];
 
-// Vehicle validation
+// Vehicle validation - Updated without location and model fields
 exports.validateVehicle = [
   body("name")
     .trim()
@@ -93,8 +93,6 @@ exports.validateVehicle = [
       "Volkswagen",
     ])
     .withMessage("Please select a valid brand"),
-
-  body("model").trim().notEmpty().withMessage("Vehicle model is required"),
 
   body("year")
     .isInt({ min: 2000, max: new Date().getFullYear() + 1 })
@@ -128,8 +126,10 @@ exports.validateVehicle = [
     .withMessage("License plate must be in format: 12345A"),
 
   body("whatsappNumber")
-    .matches(/^(\+212|212|0)[5-7]\d{8}$/)
-    .withMessage("Please enter a valid Moroccan phone number"),
+    .matches(/^0[67]\d{8}$/)
+    .withMessage(
+      "Please enter a valid WhatsApp number (06XXXXXXXX or 07XXXXXXXX)"
+    ),
 
   body("caution")
     .isFloat({ min: 0 })
@@ -139,10 +139,6 @@ exports.validateVehicle = [
     .optional()
     .isInt({ min: 0 })
     .withMessage("Mileage must be a positive number"),
-
-  body("location")
-    .isIn(["Tangier Airport", "Tangier City Center", "Tangier Port"])
-    .withMessage("Please select a valid location"),
 
   body("features")
     .optional()
@@ -209,12 +205,6 @@ exports.validateVehicleUpdate = [
     ])
     .withMessage("Please select a valid brand"),
 
-  body("model")
-    .optional()
-    .trim()
-    .notEmpty()
-    .withMessage("Vehicle model cannot be empty"),
-
   body("year")
     .optional()
     .isInt({ min: 2000, max: new Date().getFullYear() + 1 })
@@ -255,8 +245,10 @@ exports.validateVehicleUpdate = [
 
   body("whatsappNumber")
     .optional()
-    .matches(/^(\+212|212|0)[5-7]\d{8}$/)
-    .withMessage("Please enter a valid Moroccan phone number"),
+    .matches(/^0[67]\d{8}$/)
+    .withMessage(
+      "Please enter a valid WhatsApp number (06XXXXXXXX or 07XXXXXXXX)"
+    ),
 
   body("caution")
     .optional()
@@ -267,11 +259,6 @@ exports.validateVehicleUpdate = [
     .optional()
     .isInt({ min: 0 })
     .withMessage("Mileage must be a positive number"),
-
-  body("location")
-    .optional()
-    .isIn(["Tangier Airport", "Tangier City Center", "Tangier Port"])
-    .withMessage("Please select a valid location"),
 
   body("features")
     .optional()
@@ -322,8 +309,10 @@ exports.validateCustomer = [
     .normalizeEmail(),
 
   body("phone")
-    .matches(/^(\+212|212|0)[5-7]\d{8}$/)
-    .withMessage("Please enter a valid Moroccan phone number"),
+    .matches(/^0[67]\d{8}$/)
+    .withMessage(
+      "Please enter a valid Moroccan phone number (06XXXXXXXX or 07XXXXXXXX)"
+    ),
 
   body("dateOfBirth")
     .optional()
@@ -363,8 +352,10 @@ exports.validateCustomerUpdate = [
 
   body("phone")
     .optional()
-    .matches(/^(\+212|212|0)[5-7]\d{8}$/)
-    .withMessage("Please enter a valid Moroccan phone number"),
+    .matches(/^0[67]\d{8}$/)
+    .withMessage(
+      "Please enter a valid Moroccan phone number (06XXXXXXXX or 07XXXXXXXX)"
+    ),
 
   body("dateOfBirth")
     .optional()

@@ -1,4 +1,4 @@
-// src/models/Vehicle.js - Fixed naming collision
+// src/models/Vehicle.js - Updated with WhatsApp validation and no location field
 const { DataTypes } = require("sequelize");
 const { sequelize } = require("../config/database");
 
@@ -33,13 +33,6 @@ const Vehicle = sequelize.define(
         "Volkswagen"
       ),
       allowNull: false,
-    },
-    model: {
-      type: DataTypes.STRING(50),
-      allowNull: false,
-      validate: {
-        notEmpty: true,
-      },
     },
     year: {
       type: DataTypes.INTEGER,
@@ -92,7 +85,8 @@ const Vehicle = sequelize.define(
       type: DataTypes.STRING(15),
       allowNull: false,
       validate: {
-        is: /^(\+212|212|0)[5-7]\d{8}$/,
+        // Updated to match 06 XX XX XX XX format (10 digits starting with 06 or 07)
+        is: /^0[67]\d{8}$/,
       },
     },
     caution: {
@@ -112,14 +106,6 @@ const Vehicle = sequelize.define(
     available: {
       type: DataTypes.BOOLEAN,
       defaultValue: true,
-    },
-    location: {
-      type: DataTypes.ENUM(
-        "Tangier Airport",
-        "Tangier City Center",
-        "Tangier Port"
-      ),
-      allowNull: false,
     },
     rating: {
       type: DataTypes.DECIMAL(2, 1),
@@ -220,9 +206,6 @@ const Vehicle = sequelize.define(
       },
       {
         fields: ["available"],
-      },
-      {
-        fields: ["location"],
       },
       {
         fields: ["price"],
