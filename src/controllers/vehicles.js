@@ -4,6 +4,7 @@ const { validationResult } = require("express-validator");
 const { Op } = require("sequelize");
 const asyncHandler = require("../middleware/asyncHandler");
 const ErrorResponse = require("../utils/errorResponse");
+const { sequelize } = require("../config/database");
 
 // @desc    Get available brands
 // @route   GET /api/vehicles/brands
@@ -85,6 +86,8 @@ const getVehicles = asyncHandler(async (req, res, next) => {
     ...otherFilters
   } = req.query;
 
+  console.log("Search query received:", search); // DEBUG LOG
+
   // Build where clause
   const where = {};
 
@@ -120,14 +123,20 @@ const getVehicles = asyncHandler(async (req, res, next) => {
     if (maxPrice) where.price[Op.lte] = parseFloat(maxPrice);
   }
 
-  // Search functionality
-  if (search) {
+  if (search && search.trim() !== "") {
+    const searchTerm = search.trim();
+    console.log("Applying search filter for:", searchTerm);
+
     where[Op.or] = [
-      { name: { [Op.iLike]: `%${search}%` } },
-      { brand: { [Op.iLike]: `%${search}%` } },
-      { licensePlate: { [Op.iLike]: `%${search}%` } },
+      { name: { [Op.iLike]: `%${searchTerm}%` } },
+      // FIXED: Cast ENUM to text for PostgreSQL compatibility
+      sequelize.where(sequelize.cast(sequelize.col("brand"), "TEXT"), {
+        [Op.iLike]: `%${searchTerm}%`,
+      }),
+      { licensePlate: { [Op.iLike]: `%${searchTerm}%` } },
     ];
   }
+  console.log("Final where clause:", JSON.stringify(where, null, 2)); // DEBUG LOG
 
   // Build order clause
   let order = [["createdAt", "DESC"]];
@@ -152,53 +161,60 @@ const getVehicles = asyncHandler(async (req, res, next) => {
   const limitNum = parseInt(limit, 10);
   const offset = (pageNum - 1) * limitNum;
 
-  // Execute query
-  const { count, rows: vehicles } = await Vehicle.findAndCountAll({
-    where,
-    attributes,
-    order,
-    limit: limitNum,
-    offset,
-    include: [
-      {
-        model: Admin,
-        as: "createdBy",
-        attributes: ["id", "name", "email"],
-      },
-    ],
-  });
-
-  // Transform vehicles for frontend (convert BYTEA to data URLs)
-  const transformedVehicles = vehicles.map(transformVehicleForResponse);
-
-  // Build pagination result
-  const pagination = {};
-  const totalPages = Math.ceil(count / limitNum);
-
-  if (pageNum < totalPages) {
-    pagination.next = {
-      page: pageNum + 1,
+  try {
+    // Execute query
+    const { count, rows: vehicles } = await Vehicle.findAndCountAll({
+      where,
+      attributes,
+      order,
       limit: limitNum,
-    };
+      offset,
+      include: [
+        {
+          model: Admin,
+          as: "createdBy",
+          attributes: ["id", "name", "email"],
+        },
+      ],
+    });
+
+    console.log(`Found ${count} vehicles matching search criteria`); // DEBUG LOG
+
+    // Transform vehicles for frontend (convert BYTEA to data URLs)
+    const transformedVehicles = vehicles.map(transformVehicleForResponse);
+
+    // Build pagination result
+    const pagination = {};
+    const totalPages = Math.ceil(count / limitNum);
+
+    if (pageNum < totalPages) {
+      pagination.next = {
+        page: pageNum + 1,
+        limit: limitNum,
+      };
+    }
+
+    if (pageNum > 1) {
+      pagination.prev = {
+        page: pageNum - 1,
+        limit: limitNum,
+      };
+    }
+
+    pagination.current = pageNum;
+    pagination.totalPages = totalPages;
+
+    res.status(200).json({
+      success: true,
+      count: transformedVehicles.length,
+      total: count,
+      pagination,
+      data: transformedVehicles,
+    });
+  } catch (error) {
+    console.error("Database query error:", error);
+    return next(new ErrorResponse("Error fetching vehicles", 500));
   }
-
-  if (pageNum > 1) {
-    pagination.prev = {
-      page: pageNum - 1,
-      limit: limitNum,
-    };
-  }
-
-  pagination.current = pageNum;
-  pagination.totalPages = totalPages;
-
-  res.status(200).json({
-    success: true,
-    count: transformedVehicles.length,
-    total: count,
-    pagination,
-    data: transformedVehicles,
-  });
 });
 
 // @desc    Get single vehicle
