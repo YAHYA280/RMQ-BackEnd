@@ -1,4 +1,4 @@
-// src/models/Customer.js - Complete implementation
+// src/models/Customer.js - FIXED: Updated with BYTEA image storage and optional fields
 const { DataTypes } = require("sequelize");
 const { sequelize } = require("../config/database");
 
@@ -28,18 +28,17 @@ const Customer = sequelize.define(
     },
     email: {
       type: DataTypes.STRING,
-      allowNull: false,
+      allowNull: true, // FIXED: Email is now optional
       unique: true,
       validate: {
         isEmail: true,
-        notEmpty: true,
       },
     },
     phone: {
       type: DataTypes.STRING(15),
       allowNull: false,
       validate: {
-        is: /^(\+212|212|0)[5-7]\d{8}$/,
+        is: /^0[67]\d{8}$/,
       },
     },
     dateOfBirth: {
@@ -80,9 +79,18 @@ const Customer = sequelize.define(
         len: [0, 20],
       },
     },
-    driverLicenseImage: {
-      type: DataTypes.JSONB,
-      defaultValue: null,
+    // FIXED: Driver license image stored as BYTEA (like vehicles)
+    driverLicenseImageData: {
+      type: DataTypes.BLOB("long"), // For PostgreSQL, this becomes BYTEA
+      allowNull: true,
+    },
+    driverLicenseImageMimetype: {
+      type: DataTypes.STRING(100),
+      allowNull: true,
+    },
+    driverLicenseImageName: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
     },
     emergencyContact: {
       type: DataTypes.JSONB,
@@ -164,11 +172,20 @@ const Customer = sequelize.define(
           customer.referralCode = await Customer.generateReferralCode();
         }
       },
+      beforeValidate: async (customer) => {
+        // FIXED: Make email unique only if provided
+        if (customer.email && customer.email.trim() === "") {
+          customer.email = null;
+        }
+      },
     },
     indexes: [
       {
         fields: ["email"],
         unique: true,
+        where: {
+          email: { [require("sequelize").Op.ne]: null },
+        },
       },
       {
         fields: ["phone"],
@@ -177,10 +194,10 @@ const Customer = sequelize.define(
         fields: ["status"],
       },
       {
-        fields: ["created_by_id"], // Change from createdById
+        fields: ["created_by_id"],
       },
       {
-        fields: ["referral_code"], // Change from referralCode
+        fields: ["referral_code"],
         unique: true,
       },
     ],
@@ -205,6 +222,31 @@ Customer.prototype.getAge = function () {
     age--;
   }
   return age;
+};
+
+// FIXED: Get driver license image as base64 data URL for frontend
+Customer.prototype.getDriverLicenseImageDataUrl = function () {
+  if (this.driverLicenseImageData && this.driverLicenseImageMimetype) {
+    const base64 = this.driverLicenseImageData.toString("base64");
+    return `data:${this.driverLicenseImageMimetype};base64,${base64}`;
+  }
+  return null;
+};
+
+// FIXED: Format phone number for display
+Customer.prototype.getFormattedPhone = function () {
+  if (!this.phone) return "";
+  const cleaned = this.phone.replace(/\s/g, "");
+  if (cleaned.length === 10) {
+    return `${cleaned.substring(0, 2)} ${cleaned.substring(
+      2,
+      4
+    )} ${cleaned.substring(4, 6)} ${cleaned.substring(
+      6,
+      8
+    )} ${cleaned.substring(8, 10)}`;
+  }
+  return this.phone;
 };
 
 Customer.prototype.incrementBookings = async function (amount = 0) {
@@ -288,12 +330,12 @@ Customer.searchCustomers = async function (searchTerm, options = {}) {
   }
 
   if (searchTerm) {
-    whereClause[Op.or] = [
-      { firstName: { [Op.iLike]: `%${searchTerm}%` } },
-      { lastName: { [Op.iLike]: `%${searchTerm}%` } },
-      { email: { [Op.iLike]: `%${searchTerm}%` } },
-      { phone: { [Op.like]: `%${searchTerm}%` } },
-      { referralCode: { [Op.iLike]: `%${searchTerm}%` } },
+    whereClause[require("sequelize").Op.or] = [
+      { firstName: { [require("sequelize").Op.iLike]: `%${searchTerm}%` } },
+      { lastName: { [require("sequelize").Op.iLike]: `%${searchTerm}%` } },
+      { email: { [require("sequelize").Op.iLike]: `%${searchTerm}%` } },
+      { phone: { [require("sequelize").Op.like]: `%${searchTerm}%` } },
+      { referralCode: { [require("sequelize").Op.iLike]: `%${searchTerm}%` } },
     ];
   }
 

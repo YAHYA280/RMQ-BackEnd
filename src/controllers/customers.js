@@ -1,11 +1,28 @@
-// src/controllers/customers.js - Complete implementation
+// src/controllers/customers.js - FIXED: Updated with BYTEA image storage and optional fields
 const { Customer, Admin } = require("../models");
 const { validationResult } = require("express-validator");
 const { Op } = require("sequelize");
-const path = require("path");
-const fs = require("fs").promises;
 const asyncHandler = require("../middleware/asyncHandler");
 const ErrorResponse = require("../utils/errorResponse");
+
+// Helper function to transform customer data for response
+const transformCustomerForResponse = (customer) => {
+  const customerData = customer.toJSON();
+
+  // Convert driver license image BYTEA to data URL
+  if (customer.driverLicenseImageData && customer.driverLicenseImageMimetype) {
+    customerData.driverLicenseImage = {
+      dataUrl: customer.getDriverLicenseImageDataUrl(),
+      mimetype: customer.driverLicenseImageMimetype,
+      name: customer.driverLicenseImageName || "driver-license",
+    };
+  }
+
+  // Format phone number for display
+  customerData.phoneFormatted = customer.getFormattedPhone();
+
+  return customerData;
+};
 
 // @desc    Get all customers with filtering and pagination
 // @route   GET /api/customers
@@ -38,6 +55,7 @@ exports.getCustomers = asyncHandler(async (req, res, next) => {
     where[Op.or] = [
       { firstName: { [Op.iLike]: `%${search}%` } },
       { lastName: { [Op.iLike]: `%${search}%` } },
+      // FIXED: Handle case where email might be null
       { email: { [Op.iLike]: `%${search}%` } },
       { phone: { [Op.like]: `%${search}%` } },
       { referralCode: { [Op.iLike]: `%${search}%` } },
@@ -82,6 +100,9 @@ exports.getCustomers = asyncHandler(async (req, res, next) => {
     ],
   });
 
+  // Transform customers for response
+  const transformedCustomers = customers.map(transformCustomerForResponse);
+
   // Build pagination result
   const pagination = {};
   const totalPages = Math.ceil(count / limitNum);
@@ -99,10 +120,10 @@ exports.getCustomers = asyncHandler(async (req, res, next) => {
 
   res.status(200).json({
     success: true,
-    count: customers.length,
+    count: transformedCustomers.length,
     total: count,
     pagination,
-    data: customers,
+    data: transformedCustomers,
   });
 });
 
@@ -124,9 +145,12 @@ exports.getCustomer = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse("Customer not found", 404));
   }
 
+  // Transform customer for response
+  const customerData = transformCustomerForResponse(customer);
+
   res.status(200).json({
     success: true,
-    data: customer,
+    data: customerData,
   });
 });
 
@@ -140,34 +164,41 @@ exports.createCustomer = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse("Validation failed", 400, errors.array()));
   }
 
-  // Check if customer with email already exists
-  const existingCustomer = await Customer.findOne({
-    where: { email: req.body.email },
-  });
+  // FIXED: Only check email uniqueness if email is provided
+  if (req.body.email && req.body.email.trim() !== "") {
+    const existingCustomer = await Customer.findOne({
+      where: { email: req.body.email.trim() },
+    });
 
-  if (existingCustomer) {
-    return next(
-      new ErrorResponse("Customer with this email already exists", 400)
-    );
+    if (existingCustomer) {
+      return next(
+        new ErrorResponse("Customer with this email already exists", 400)
+      );
+    }
+  } else {
+    // Remove empty email
+    req.body.email = null;
   }
 
-  // Handle driver license upload
-  let driverLicenseImage = null;
+  // FIXED: Handle driver license image upload with BYTEA storage
+  let driverLicenseImageData = null;
+  let driverLicenseImageMimetype = null;
+  let driverLicenseImageName = null;
+
   if (req.file) {
-    driverLicenseImage = {
-      filename: req.file.filename,
-      originalName: req.file.originalname,
-      path: `/uploads/customers/${req.file.filename}`,
-      size: req.file.size,
-      mimetype: req.file.mimetype,
-    };
+    driverLicenseImageData = req.file.buffer;
+    driverLicenseImageMimetype = req.file.mimetype;
+    driverLicenseImageName = req.file.originalname;
   }
 
-  // Add admin tracking and driver license
+  // Add admin tracking and driver license image data
   req.body.createdById = req.admin.id;
   req.body.source = "admin";
-  if (driverLicenseImage) {
-    req.body.driverLicenseImage = driverLicenseImage;
+
+  if (driverLicenseImageData) {
+    req.body.driverLicenseImageData = driverLicenseImageData;
+    req.body.driverLicenseImageMimetype = driverLicenseImageMimetype;
+    req.body.driverLicenseImageName = driverLicenseImageName;
   }
 
   // Create customer
@@ -184,10 +215,13 @@ exports.createCustomer = asyncHandler(async (req, res, next) => {
     ],
   });
 
+  // Transform for response
+  const customerData = transformCustomerForResponse(createdCustomer);
+
   res.status(201).json({
     success: true,
     message: "Customer created successfully",
-    data: createdCustomer,
+    data: customerData,
   });
 });
 
@@ -207,11 +241,15 @@ exports.updateCustomer = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse("Customer not found", 404));
   }
 
-  // Check if new email is already taken by another customer
-  if (req.body.email && req.body.email !== customer.email) {
+  // FIXED: Check email uniqueness only if email is provided and changed
+  if (
+    req.body.email &&
+    req.body.email.trim() !== "" &&
+    req.body.email !== customer.email
+  ) {
     const existingCustomer = await Customer.findOne({
       where: {
-        email: req.body.email,
+        email: req.body.email.trim(),
         id: { [Op.ne]: customer.id },
       },
     });
@@ -221,35 +259,16 @@ exports.updateCustomer = asyncHandler(async (req, res, next) => {
         new ErrorResponse("Email is already in use by another customer", 400)
       );
     }
+  } else if (!req.body.email || req.body.email.trim() === "") {
+    // Remove empty email
+    req.body.email = null;
   }
 
-  // Handle driver license upload
+  // FIXED: Handle driver license image upload with BYTEA storage
   if (req.file) {
-    // Delete old driver license image
-    if (customer.driverLicenseImage?.filename) {
-      try {
-        const oldPath = path.join(
-          __dirname,
-          "../uploads/customers",
-          customer.driverLicenseImage.filename
-        );
-        await fs.unlink(oldPath);
-      } catch (error) {
-        console.warn(
-          "Warning: Could not delete old driver license image:",
-          error.message
-        );
-      }
-    }
-
-    // Add new driver license image
-    req.body.driverLicenseImage = {
-      filename: req.file.filename,
-      originalName: req.file.originalname,
-      path: `/uploads/customers/${req.file.filename}`,
-      size: req.file.size,
-      mimetype: req.file.mimetype,
-    };
+    req.body.driverLicenseImageData = req.file.buffer;
+    req.body.driverLicenseImageMimetype = req.file.mimetype;
+    req.body.driverLicenseImageName = req.file.originalname;
   }
 
   // Update customer
@@ -266,10 +285,13 @@ exports.updateCustomer = asyncHandler(async (req, res, next) => {
     ],
   });
 
+  // Transform for response
+  const customerData = transformCustomerForResponse(updatedCustomer);
+
   res.status(200).json({
     success: true,
     message: "Customer updated successfully",
-    data: updatedCustomer,
+    data: customerData,
   });
 });
 
@@ -301,24 +323,7 @@ exports.deleteCustomer = asyncHandler(async (req, res, next) => {
     );
   }
 
-  // Delete driver license image
-  if (customer.driverLicenseImage?.filename) {
-    try {
-      const imagePath = path.join(
-        __dirname,
-        "../uploads/customers",
-        customer.driverLicenseImage.filename
-      );
-      await fs.unlink(imagePath);
-    } catch (error) {
-      console.warn(
-        "Warning: Could not delete driver license image:",
-        error.message
-      );
-    }
-  }
-
-  // Delete customer from database
+  // FIXED: No need to delete image files since they're stored in database
   await customer.destroy();
 
   res.status(200).json({
@@ -346,10 +351,13 @@ exports.updateCustomerStatus = asyncHandler(async (req, res, next) => {
 
   await customer.update({ status });
 
+  // Transform for response
+  const customerData = transformCustomerForResponse(customer);
+
   res.status(200).json({
     success: true,
     message: `Customer status updated to ${status}`,
-    data: customer,
+    data: customerData,
   });
 });
 
@@ -367,38 +375,20 @@ exports.uploadDriverLicense = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse("Please upload a driver license image", 400));
   }
 
-  // Delete old driver license image
-  if (customer.driverLicenseImage?.filename) {
-    try {
-      const oldPath = path.join(
-        __dirname,
-        "../uploads/customers",
-        customer.driverLicenseImage.filename
-      );
-      await fs.unlink(oldPath);
-    } catch (error) {
-      console.warn(
-        "Warning: Could not delete old driver license image:",
-        error.message
-      );
-    }
-  }
+  // FIXED: Store driver license image as BYTEA
+  await customer.update({
+    driverLicenseImageData: req.file.buffer,
+    driverLicenseImageMimetype: req.file.mimetype,
+    driverLicenseImageName: req.file.originalname,
+  });
 
-  // Save new driver license image
-  const driverLicenseImage = {
-    filename: req.file.filename,
-    originalName: req.file.originalname,
-    path: `/uploads/customers/${req.file.filename}`,
-    size: req.file.size,
-    mimetype: req.file.mimetype,
-  };
-
-  await customer.update({ driverLicenseImage });
+  // Transform for response
+  const customerData = transformCustomerForResponse(customer);
 
   res.status(200).json({
     success: true,
     message: "Driver license uploaded successfully",
-    data: customer,
+    data: customerData,
   });
 });
 
@@ -487,10 +477,13 @@ exports.searchCustomers = asyncHandler(async (req, res, next) => {
     offset: parseInt(offset),
   });
 
+  // Transform customers for response
+  const transformedCustomers = result.rows.map(transformCustomerForResponse);
+
   res.status(200).json({
     success: true,
-    count: result.rows.length,
+    count: transformedCustomers.length,
     total: result.count,
-    data: result.rows,
+    data: transformedCustomers,
   });
 });

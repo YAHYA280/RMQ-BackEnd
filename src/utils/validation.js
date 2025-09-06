@@ -297,11 +297,14 @@ exports.validateCustomer = [
     .isLength({ min: 2, max: 50 })
     .withMessage("Last name must be between 2 and 50 characters"),
 
+  // FIXED: Email is now optional
   body("email")
+    .optional({ nullable: true, checkFalsy: true })
     .isEmail()
     .withMessage("Please enter a valid email")
     .normalizeEmail(),
 
+  // FIXED: Phone validation with proper Moroccan format
   body("phone")
     .matches(/^0[67]\d{8}$/)
     .withMessage(
@@ -318,8 +321,31 @@ exports.validateCustomer = [
     .trim()
     .isLength({ max: 200 })
     .withMessage("Address cannot be more than 200 characters"),
-];
 
+  body("city")
+    .optional()
+    .trim()
+    .isLength({ max: 50 })
+    .withMessage("City cannot be more than 50 characters"),
+
+  body("postalCode")
+    .optional()
+    .trim()
+    .isLength({ max: 10 })
+    .withMessage("Postal code cannot be more than 10 characters"),
+
+  body("driverLicenseNumber")
+    .optional()
+    .trim()
+    .isLength({ max: 20 })
+    .withMessage("Driver license number cannot be more than 20 characters"),
+
+  body("notes")
+    .optional()
+    .trim()
+    .isLength({ max: 500 })
+    .withMessage("Notes cannot be more than 500 characters"),
+];
 // Customer update validation
 exports.validateCustomerUpdate = [
   body("firstName")
@@ -338,12 +364,14 @@ exports.validateCustomerUpdate = [
     .isLength({ min: 2, max: 50 })
     .withMessage("Last name must be between 2 and 50 characters"),
 
+  // FIXED: Email is optional for updates too
   body("email")
-    .optional()
+    .optional({ nullable: true, checkFalsy: true })
     .isEmail()
     .withMessage("Please enter a valid email")
     .normalizeEmail(),
 
+  // FIXED: Phone validation with proper Moroccan format
   body("phone")
     .optional()
     .matches(/^0[67]\d{8}$/)
@@ -362,10 +390,34 @@ exports.validateCustomerUpdate = [
     .isLength({ max: 200 })
     .withMessage("Address cannot be more than 200 characters"),
 
+  body("city")
+    .optional()
+    .trim()
+    .isLength({ max: 50 })
+    .withMessage("City cannot be more than 50 characters"),
+
+  body("postalCode")
+    .optional()
+    .trim()
+    .isLength({ max: 10 })
+    .withMessage("Postal code cannot be more than 10 characters"),
+
+  body("driverLicenseNumber")
+    .optional()
+    .trim()
+    .isLength({ max: 20 })
+    .withMessage("Driver license number cannot be more than 20 characters"),
+
   body("status")
     .optional()
     .isIn(["active", "inactive", "blocked"])
     .withMessage("Status must be active, inactive, or blocked"),
+
+  body("notes")
+    .optional()
+    .trim()
+    .isLength({ max: 500 })
+    .withMessage("Notes cannot be more than 500 characters"),
 ];
 
 // Booking validation
