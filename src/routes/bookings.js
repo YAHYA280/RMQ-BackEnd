@@ -19,6 +19,7 @@ const {
 const { protect, authorize } = require("../middleware/auth");
 const {
   validateBooking,
+  validateAdminBooking,
   validateBookingUpdate,
   validateUUID,
   validatePagination,
@@ -38,7 +39,7 @@ router.get("/", validatePagination, getBookings);
 router.get("/stats", getBookingStats);
 
 // Admin booking creation
-router.post("/", validateBooking, createAdminBooking);
+router.post("/", validateAdminBooking, createAdminBooking);
 
 // Availability check
 router.get("/availability/:vehicleId", validateUUID, checkAvailability);

@@ -653,23 +653,11 @@ exports.validateAdminBooking = [
 
   body("pickupDate")
     .isISO8601()
-    .withMessage("Please enter a valid pickup date")
-    .custom((value) => {
-      if (new Date(value) < new Date()) {
-        throw new Error("Pickup date cannot be in the past");
-      }
-      return true;
-    }),
+    .withMessage("Please enter a valid pickup date"),
 
   body("returnDate")
     .isISO8601()
-    .withMessage("Please enter a valid return date")
-    .custom((value, { req }) => {
-      if (new Date(value) <= new Date(req.body.pickupDate)) {
-        throw new Error("Return date must be after pickup date");
-      }
-      return true;
-    }),
+    .withMessage("Please enter a valid return date"),
 
   body("pickupTime")
     .matches(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/)
@@ -682,14 +670,10 @@ exports.validateAdminBooking = [
   body("pickupLocation")
     .trim()
     .notEmpty()
-    .withMessage("Pickup location is required")
-    .isLength({ max: 200 })
-    .withMessage("Pickup location cannot exceed 200 characters"),
+    .withMessage("Pickup location is required"),
 
   body("returnLocation")
     .trim()
     .notEmpty()
-    .withMessage("Return location is required")
-    .isLength({ max: 200 })
-    .withMessage("Return location cannot exceed 200 characters"),
+    .withMessage("Return location is required"),
 ];
