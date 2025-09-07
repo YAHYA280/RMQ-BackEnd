@@ -560,3 +560,136 @@ exports.validatePagination = [
     .isInt({ min: 1, max: 100 })
     .withMessage("Limit must be between 1 and 100"),
 ];
+
+exports.validateWebsiteBooking = [
+  // Customer information
+  body("firstName")
+    .trim()
+    .notEmpty()
+    .withMessage("First name is required")
+    .isLength({ min: 2, max: 50 })
+    .withMessage("First name must be between 2 and 50 characters"),
+
+  body("lastName")
+    .trim()
+    .notEmpty()
+    .withMessage("Last name is required")
+    .isLength({ min: 2, max: 50 })
+    .withMessage("Last name must be between 2 and 50 characters"),
+
+  body("phone")
+    .matches(/^0[67]\d{8}$/)
+    .withMessage(
+      "Please enter a valid Moroccan phone number (06XXXXXXXX or 07XXXXXXXX)"
+    ),
+
+  body("email")
+    .optional({ nullable: true, checkFalsy: true })
+    .isEmail()
+    .withMessage("Please enter a valid email")
+    .normalizeEmail(),
+
+  // Vehicle and booking details
+  body("vehicleId")
+    .notEmpty()
+    .withMessage("Vehicle ID is required")
+    .isUUID()
+    .withMessage("Invalid vehicle ID format"),
+
+  body("pickupDate")
+    .isISO8601()
+    .withMessage("Please enter a valid pickup date")
+    .custom((value) => {
+      if (new Date(value) < new Date()) {
+        throw new Error("Pickup date cannot be in the past");
+      }
+      return true;
+    }),
+
+  body("returnDate")
+    .isISO8601()
+    .withMessage("Please enter a valid return date")
+    .custom((value, { req }) => {
+      if (new Date(value) <= new Date(req.body.pickupDate)) {
+        throw new Error("Return date must be after pickup date");
+      }
+      return true;
+    }),
+
+  body("pickupTime")
+    .matches(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/)
+    .withMessage("Please enter a valid pickup time (HH:MM format)"),
+
+  body("returnTime")
+    .matches(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/)
+    .withMessage("Please enter a valid return time (HH:MM format)"),
+
+  body("pickupLocation")
+    .trim()
+    .notEmpty()
+    .withMessage("Pickup location is required")
+    .isLength({ max: 200 })
+    .withMessage("Pickup location cannot exceed 200 characters"),
+
+  body("returnLocation")
+    .trim()
+    .notEmpty()
+    .withMessage("Return location is required")
+    .isLength({ max: 200 })
+    .withMessage("Return location cannot exceed 200 characters"),
+];
+exports.validateAdminBooking = [
+  body("customerId")
+    .notEmpty()
+    .withMessage("Customer ID is required")
+    .isUUID()
+    .withMessage("Invalid customer ID format"),
+
+  body("vehicleId")
+    .notEmpty()
+    .withMessage("Vehicle ID is required")
+    .isUUID()
+    .withMessage("Invalid vehicle ID format"),
+
+  body("pickupDate")
+    .isISO8601()
+    .withMessage("Please enter a valid pickup date")
+    .custom((value) => {
+      if (new Date(value) < new Date()) {
+        throw new Error("Pickup date cannot be in the past");
+      }
+      return true;
+    }),
+
+  body("returnDate")
+    .isISO8601()
+    .withMessage("Please enter a valid return date")
+    .custom((value, { req }) => {
+      if (new Date(value) <= new Date(req.body.pickupDate)) {
+        throw new Error("Return date must be after pickup date");
+      }
+      return true;
+    }),
+
+  body("pickupTime")
+    .matches(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/)
+    .withMessage("Please enter a valid pickup time (HH:MM format)"),
+
+  body("returnTime")
+    .matches(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/)
+    .withMessage("Please enter a valid return time (HH:MM format)"),
+
+  body("pickupLocation")
+    .trim()
+    .notEmpty()
+    .withMessage("Pickup location is required")
+    .isLength({ max: 200 })
+    .withMessage("Pickup location cannot exceed 200 characters"),
+
+  body("returnLocation")
+    .trim()
+    .notEmpty()
+    .withMessage("Return location is required")
+    .isLength({ max: 200 })
+    .withMessage("Return location cannot exceed 200 characters"),
+];

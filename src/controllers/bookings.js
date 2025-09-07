@@ -1,4 +1,4 @@
-// src/controllers/bookings.js - Complete implementation
+// src/controllers/bookings.js - Updated for website and admin bookings
 const { Booking, Customer, Vehicle, Admin } = require("../models");
 const { validationResult } = require("express-validator");
 const { Op } = require("sequelize");
@@ -21,7 +21,6 @@ exports.getBookings = asyncHandler(async (req, res, next) => {
     vehicleId,
     dateFrom,
     dateTo,
-    paymentStatus,
   } = req.query;
 
   // Build where clause
@@ -41,10 +40,6 @@ exports.getBookings = asyncHandler(async (req, res, next) => {
 
   if (vehicleId) {
     where.vehicleId = vehicleId;
-  }
-
-  if (paymentStatus) {
-    where.paymentStatus = paymentStatus;
   }
 
   // Date filtering
@@ -90,7 +85,7 @@ exports.getBookings = asyncHandler(async (req, res, next) => {
           "id",
           "name",
           "brand",
-          "model",
+          "year",
           "licensePlate",
           "whatsappNumber",
         ],
@@ -147,7 +142,9 @@ exports.getBooking = asyncHandler(async (req, res, next) => {
           "lastName",
           "email",
           "phone",
-          "driverLicenseImage",
+          "driverLicenseImageData",
+          "driverLicenseImageMimetype",
+          "driverLicenseImageName",
         ],
       },
       {
@@ -157,11 +154,11 @@ exports.getBooking = asyncHandler(async (req, res, next) => {
           "id",
           "name",
           "brand",
-          "model",
           "year",
           "licensePlate",
           "whatsappNumber",
-          "mainImage",
+          "mainImageData",
+          "mainImageMimetype",
           "features",
         ],
       },
@@ -193,17 +190,136 @@ exports.getBooking = asyncHandler(async (req, res, next) => {
   });
 });
 
-// @desc    Create new booking
-// @route   POST /api/bookings
-// @access  Private (admin)
-exports.createBooking = asyncHandler(async (req, res, next) => {
+// @desc    Create new booking from website
+// @route   POST /api/bookings/website
+// @access  Public
+exports.createWebsiteBooking = asyncHandler(async (req, res, next) => {
   // Check for validation errors
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     return next(new ErrorResponse("Validation failed", 400, errors.array()));
   }
 
-  const { customerId, vehicleId, pickupDate, returnDate } = req.body;
+  const {
+    // Vehicle and dates
+    vehicleId,
+    pickupDate,
+    returnDate,
+    pickupTime,
+    returnTime,
+    pickupLocation,
+    returnLocation,
+    // Customer information
+    firstName,
+    lastName,
+    phone,
+    email, // Optional
+  } = req.body;
+
+  // Verify vehicle exists and is available
+  const vehicle = await Vehicle.findByPk(vehicleId);
+  if (!vehicle) {
+    return next(new ErrorResponse("Vehicle not found", 404));
+  }
+  if (!vehicle.available || vehicle.status !== "active") {
+    return next(new ErrorResponse("Vehicle is not available", 400));
+  }
+
+  // Check vehicle availability for the requested dates
+  const isAvailable = await Booking.checkVehicleAvailability(
+    vehicleId,
+    pickupDate,
+    returnDate
+  );
+
+  if (!isAvailable) {
+    return next(
+      new ErrorResponse("Vehicle is not available for the selected dates", 400)
+    );
+  }
+
+  // Find or create customer
+  let customer = null;
+
+  // First try to find by phone (primary identifier)
+  customer = await Customer.findOne({ where: { phone } });
+
+  // If not found by phone, try by email (if provided)
+  if (!customer && email) {
+    customer = await Customer.findOne({ where: { email } });
+  }
+
+  // If customer doesn't exist, create new one
+  if (!customer) {
+    customer = await Customer.create({
+      firstName,
+      lastName,
+      phone,
+      email: email || null, // Email is optional
+      source: "website",
+      status: "active",
+    });
+  }
+
+  // Create booking
+  const booking = await Booking.create({
+    customerId: customer.id,
+    vehicleId,
+    pickupDate,
+    returnDate,
+    pickupTime,
+    returnTime,
+    pickupLocation,
+    returnLocation,
+    dailyRate: vehicle.price,
+    source: "website",
+    status: "pending", // Website bookings start as pending
+  });
+
+  // Fetch the created booking with associations
+  const createdBooking = await Booking.findByPk(booking.id, {
+    include: [
+      {
+        model: Customer,
+        as: "customer",
+        attributes: ["id", "firstName", "lastName", "email", "phone"],
+      },
+      {
+        model: Vehicle,
+        as: "vehicle",
+        attributes: ["id", "name", "brand", "year", "licensePlate"],
+      },
+    ],
+  });
+
+  res.status(201).json({
+    success: true,
+    message:
+      "Booking request submitted successfully. We will contact you soon to confirm.",
+    data: createdBooking,
+  });
+});
+
+// @desc    Create new booking from admin dashboard
+// @route   POST /api/bookings
+// @access  Private (admin)
+exports.createAdminBooking = asyncHandler(async (req, res, next) => {
+  // Check for validation errors
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return next(new ErrorResponse("Validation failed", 400, errors.array()));
+  }
+
+  const {
+    customerId,
+    vehicleId,
+    pickupDate,
+    returnDate,
+    pickupTime,
+    returnTime,
+    pickupLocation,
+    returnLocation,
+  } = req.body;
 
   // Verify customer exists and is active
   const customer = await Customer.findByPk(customerId);
@@ -236,25 +352,29 @@ exports.createBooking = asyncHandler(async (req, res, next) => {
     );
   }
 
-  // Set booking details
-  req.body.createdById = req.admin.id;
-  req.body.source = "admin";
-  req.body.status = "confirmed"; // Admin bookings are auto-confirmed
-  req.body.dailyRate = vehicle.price;
-  req.body.cautionAmount = vehicle.caution;
-
-  // Calculate tax (10% for Morocco)
-  const subtotal = parseFloat(vehicle.price) * req.body.totalDays;
-  req.body.taxAmount = Math.round(subtotal * 0.1 * 100) / 100;
-
   // Create booking
-  const booking = await Booking.create(req.body);
+  const booking = await Booking.create({
+    customerId,
+    vehicleId,
+    pickupDate,
+    returnDate,
+    pickupTime,
+    returnTime,
+    pickupLocation,
+    returnLocation,
+    dailyRate: vehicle.price,
+    createdById: req.admin.id,
+    source: "admin",
+    status: "confirmed", // Admin bookings are auto-confirmed
+    confirmedById: req.admin.id,
+    confirmedAt: new Date(),
+  });
 
   // Update customer and vehicle stats
   await customer.incrementBookings(booking.totalAmount);
   await vehicle.incrementBookings();
 
-  // Make vehicle temporarily unavailable if booking is active
+  // Make vehicle unavailable if booking starts today or in the past
   const today = new Date().toISOString().split("T")[0];
   if (pickupDate <= today) {
     await vehicle.update({ available: false });
@@ -271,7 +391,7 @@ exports.createBooking = asyncHandler(async (req, res, next) => {
       {
         model: Vehicle,
         as: "vehicle",
-        attributes: ["id", "name", "brand", "model", "licensePlate"],
+        attributes: ["id", "name", "brand", "year", "licensePlate"],
       },
       {
         model: Admin,
@@ -344,7 +464,7 @@ exports.updateBooking = asyncHandler(async (req, res, next) => {
       {
         model: Vehicle,
         as: "vehicle",
-        attributes: ["id", "name", "brand", "model", "licensePlate"],
+        attributes: ["id", "name", "brand", "year", "licensePlate"],
       },
       {
         model: Admin,
@@ -436,6 +556,12 @@ exports.confirmBooking = asyncHandler(async (req, res, next) => {
   await customer.incrementBookings(booking.totalAmount);
   await vehicle.incrementBookings();
 
+  // Make vehicle unavailable if booking starts today or in the past
+  const today = new Date().toISOString().split("T")[0];
+  if (booking.pickupDate <= today) {
+    await vehicle.update({ available: false });
+  }
+
   res.status(200).json({
     success: true,
     message: "Booking confirmed successfully",
@@ -480,7 +606,6 @@ exports.cancelBooking = asyncHandler(async (req, res, next) => {
 // @route   PUT /api/bookings/:id/pickup
 // @access  Private (admin)
 exports.markAsPickedUp = asyncHandler(async (req, res, next) => {
-  const { pickupCondition } = req.body;
   const booking = await Booking.findByPk(req.params.id);
 
   if (!booking) {
@@ -495,7 +620,6 @@ exports.markAsPickedUp = asyncHandler(async (req, res, next) => {
 
   await booking.update({
     status: "active",
-    pickupCondition: pickupCondition || null,
   });
 
   // Make vehicle unavailable
@@ -513,7 +637,6 @@ exports.markAsPickedUp = asyncHandler(async (req, res, next) => {
 // @route   PUT /api/bookings/:id/return
 // @access  Private (admin)
 exports.completeBooking = asyncHandler(async (req, res, next) => {
-  const { returnCondition, customerRating, customerFeedback } = req.body;
   const booking = await Booking.findByPk(req.params.id);
 
   if (!booking) {
@@ -526,29 +649,13 @@ exports.completeBooking = asyncHandler(async (req, res, next) => {
     );
   }
 
-  const updateData = {
+  await booking.update({
     status: "completed",
-    returnCondition: returnCondition || null,
-  };
-
-  if (customerRating) {
-    updateData.customerRating = customerRating;
-  }
-
-  if (customerFeedback) {
-    updateData.customerFeedback = customerFeedback;
-  }
-
-  await booking.update(updateData);
+  });
 
   // Make vehicle available again
   const vehicle = await Vehicle.findByPk(booking.vehicleId);
   await vehicle.update({ available: true });
-
-  // Update vehicle rating if customer provided rating
-  if (customerRating) {
-    await vehicle.updateRating(customerRating);
-  }
 
   res.status(200).json({
     success: true,
@@ -587,34 +694,11 @@ exports.getBookingStats = asyncHandler(async (req, res, next) => {
     raw: true,
   });
 
-  // Get popular vehicles
-  const popularVehicles = await Booking.findAll({
-    attributes: [[sequelize.fn("COUNT", sequelize.col("id")), "bookingCount"]],
-    include: [
-      {
-        model: Vehicle,
-        as: "vehicle",
-        attributes: ["id", "name", "brand", "model", "licensePlate"],
-      },
-    ],
-    group: [
-      "vehicle.id",
-      "vehicle.name",
-      "vehicle.brand",
-      "vehicle.model",
-      "vehicle.licensePlate",
-    ],
-    order: [[sequelize.fn("COUNT", sequelize.col("id")), "DESC"]],
-    limit: 10,
-    raw: false,
-  });
-
   res.status(200).json({
     success: true,
     data: {
       overview: stats,
       monthlyTrends,
-      popularVehicles,
     },
   });
 });
@@ -716,7 +800,7 @@ exports.getCustomerBookings = asyncHandler(async (req, res, next) => {
       {
         model: Vehicle,
         as: "vehicle",
-        attributes: ["id", "name", "brand", "model", "licensePlate"],
+        attributes: ["id", "name", "brand", "year", "licensePlate"],
       },
     ],
   });

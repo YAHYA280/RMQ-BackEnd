@@ -1,9 +1,10 @@
-// src/routes/bookings.js - Fixed implementation
+// src/routes/bookings.js - Complete updated routes for website and admin bookings
 const express = require("express");
 const {
   getBookings,
   getBooking,
-  createBooking,
+  createWebsiteBooking,
+  createAdminBooking,
   updateBooking,
   deleteBooking,
   confirmBooking,
@@ -25,7 +26,10 @@ const {
 
 const router = express.Router();
 
-// All routes require authentication and admin role
+// Public route for website bookings
+router.post("/website", validateBooking, createWebsiteBooking);
+
+// All other routes require authentication and admin role
 router.use(protect);
 router.use(authorize("admin", "super-admin"));
 
@@ -33,7 +37,8 @@ router.use(authorize("admin", "super-admin"));
 router.get("/", validatePagination, getBookings);
 router.get("/stats", getBookingStats);
 
-router.post("/", validateBooking, createBooking);
+// Admin booking creation
+router.post("/", validateBooking, createAdminBooking);
 
 // Availability check
 router.get("/availability/:vehicleId", validateUUID, checkAvailability);
@@ -43,9 +48,7 @@ router.get("/customer/:customerId", validateUUID, getCustomerBookings);
 
 // Single booking routes
 router.get("/:id", validateUUID, getBooking);
-
 router.put("/:id", validateUUID, validateBookingUpdate, updateBooking);
-
 router.delete("/:id", validateUUID, authorize("super-admin"), deleteBooking);
 
 // Booking workflow routes
