@@ -1,4 +1,4 @@
-// src/models/Booking.js - Updated for your exact requirements
+// src/models/Booking.js - FIXED: Updated for proper booking number generation and validation
 const { DataTypes } = require("sequelize");
 const { sequelize } = require("../config/database");
 
@@ -150,22 +150,7 @@ const Booking = sequelize.define(
     tableName: "bookings",
     timestamps: true,
     hooks: {
-      beforeCreate: async (booking) => {
-        // Generate unique booking number
-        if (!booking.bookingNumber) {
-          booking.bookingNumber = await Booking.generateBookingNumber();
-        }
-
-        // Calculate total days
-        const pickupDate = new Date(booking.pickupDate);
-        const returnDate = new Date(booking.returnDate);
-        const diffTime = Math.abs(returnDate - pickupDate);
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-        booking.totalDays = Math.max(1, diffDays);
-
-        // Calculate total amount (daily rate * days)
-        booking.totalAmount = parseFloat(booking.dailyRate) * booking.totalDays;
-      },
+      // REMOVED beforeCreate hook - we'll handle this manually in controller
       beforeUpdate: async (booking) => {
         // Recalculate totals if relevant fields changed
         if (
@@ -245,25 +230,33 @@ Booking.prototype.canBeCancelled = function () {
   return allowedStatuses.includes(this.status);
 };
 
-// Class methods
+// FIXED: Class method for generating booking numbers like BK001, BK002, etc.
 Booking.generateBookingNumber = async function () {
   let bookingNumber;
   let isUnique = false;
   let counter = 1;
 
-  // Get the last booking number to determine next increment
+  // Get the highest booking number to determine next increment
   const lastBooking = await Booking.findOne({
-    order: [["createdAt", "DESC"]],
+    where: {
+      bookingNumber: {
+        [require("sequelize").Op.like]: "BK%",
+      },
+    },
+    order: [["bookingNumber", "DESC"]],
   });
 
   if (lastBooking && lastBooking.bookingNumber) {
+    // Extract number from booking number like BK001 -> 001 -> 1
     const lastNumber = lastBooking.bookingNumber.match(/BK(\d+)/);
     if (lastNumber) {
       counter = parseInt(lastNumber[1]) + 1;
     }
   }
 
+  // Keep trying until we find a unique number
   while (!isUnique) {
+    // Format as BK001, BK002, etc. (3 digits with leading zeros)
     bookingNumber = `BK${String(counter).padStart(3, "0")}`;
 
     const existingBooking = await Booking.findOne({
@@ -274,6 +267,11 @@ Booking.generateBookingNumber = async function () {
       isUnique = true;
     } else {
       counter++;
+    }
+
+    // Safety check to prevent infinite loop
+    if (counter > 999999) {
+      throw new Error("Unable to generate unique booking number");
     }
   }
 

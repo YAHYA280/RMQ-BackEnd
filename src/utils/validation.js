@@ -677,3 +677,94 @@ exports.validateAdminBooking = [
     .notEmpty()
     .withMessage("Return location is required"),
 ];
+exports.validateWebsiteBooking = [
+  // Customer information (for auto-creation)
+  body("firstName")
+    .trim()
+    .notEmpty()
+    .withMessage("First name is required")
+    .isLength({ min: 2, max: 50 })
+    .withMessage("First name must be between 2 and 50 characters"),
+
+  body("lastName")
+    .trim()
+    .notEmpty()
+    .withMessage("Last name is required")
+    .isLength({ min: 2, max: 50 })
+    .withMessage("Last name must be between 2 and 50 characters"),
+
+  body("phone")
+    .matches(/^0[67]\d{8}$/)
+    .withMessage(
+      "Please enter a valid Moroccan phone number (06XXXXXXXX or 07XXXXXXXX)"
+    ),
+
+  body("email")
+    .optional({ nullable: true, checkFalsy: true })
+    .isEmail()
+    .withMessage("Please enter a valid email")
+    .normalizeEmail(),
+
+  // Vehicle and booking details
+  body("vehicleId")
+    .notEmpty()
+    .withMessage("Vehicle ID is required")
+    .isUUID()
+    .withMessage("Invalid vehicle ID format"),
+
+  body("pickupDate")
+    .isISO8601()
+    .withMessage("Please enter a valid pickup date")
+    .custom((value) => {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      if (new Date(value) < today) {
+        throw new Error("Pickup date cannot be in the past");
+      }
+      return true;
+    }),
+
+  body("returnDate")
+    .isISO8601()
+    .withMessage("Please enter a valid return date")
+    .custom((value, { req }) => {
+      if (new Date(value) <= new Date(req.body.pickupDate)) {
+        throw new Error("Return date must be after pickup date");
+      }
+      return true;
+    }),
+
+  body("pickupTime")
+    .matches(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/)
+    .withMessage("Please enter a valid pickup time (HH:MM format)"),
+
+  body("returnTime")
+    .matches(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/)
+    .withMessage("Please enter a valid return time (HH:MM format)"),
+
+  body("pickupLocation")
+    .trim()
+    .notEmpty()
+    .withMessage("Pickup location is required")
+    .isIn([
+      "Tangier Airport",
+      "Tangier City Center",
+      "Tangier Port",
+      "Hotel Pickup",
+      "Custom Location",
+    ])
+    .withMessage("Please select a valid pickup location"),
+
+  body("returnLocation")
+    .trim()
+    .notEmpty()
+    .withMessage("Return location is required")
+    .isIn([
+      "Tangier Airport",
+      "Tangier City Center",
+      "Tangier Port",
+      "Hotel Pickup",
+      "Custom Location",
+    ])
+    .withMessage("Please select a valid return location"),
+];

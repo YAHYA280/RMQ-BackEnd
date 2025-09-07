@@ -216,6 +216,8 @@ exports.createWebsiteBooking = asyncHandler(async (req, res, next) => {
     email, // Optional
   } = req.body;
 
+  console.log("Website booking request:", req.body);
+
   // Verify vehicle exists and is available
   const vehicle = await Vehicle.findByPk(vehicleId);
   if (!vehicle) {
@@ -238,6 +240,23 @@ exports.createWebsiteBooking = asyncHandler(async (req, res, next) => {
     );
   }
 
+  // FIXED: Calculate required fields BEFORE creating booking
+  const pickup = new Date(pickupDate);
+  const returnD = new Date(returnDate);
+  const diffTime = Math.abs(returnD.getTime() - pickup.getTime());
+  const totalDays = Math.max(1, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
+  const totalAmount = parseFloat(vehicle.price) * totalDays;
+
+  // FIXED: Generate booking number BEFORE creating booking
+  const bookingNumber = await Booking.generateBookingNumber();
+
+  console.log("Calculated values:", {
+    bookingNumber,
+    totalDays,
+    totalAmount,
+    dailyRate: vehicle.price,
+  });
+
   // Find or create customer
   let customer = null;
 
@@ -259,10 +278,14 @@ exports.createWebsiteBooking = asyncHandler(async (req, res, next) => {
       source: "website",
       status: "active",
     });
+    console.log("Created new customer:", customer.id);
+  } else {
+    console.log("Found existing customer:", customer.id);
   }
 
-  // Create booking
+  // FIXED: Create booking with ALL required fields explicitly set
   const booking = await Booking.create({
+    bookingNumber, // FIXED: Explicitly provided
     customerId: customer.id,
     vehicleId,
     pickupDate,
@@ -272,8 +295,17 @@ exports.createWebsiteBooking = asyncHandler(async (req, res, next) => {
     pickupLocation,
     returnLocation,
     dailyRate: vehicle.price,
+    totalDays, // FIXED: Explicitly calculated
+    totalAmount, // FIXED: Explicitly calculated
     source: "website",
     status: "pending", // Website bookings start as pending
+  });
+
+  console.log("Created booking:", {
+    id: booking.id,
+    bookingNumber: booking.bookingNumber,
+    totalDays: booking.totalDays,
+    totalAmount: booking.totalAmount,
   });
 
   // Fetch the created booking with associations
@@ -299,7 +331,6 @@ exports.createWebsiteBooking = asyncHandler(async (req, res, next) => {
     data: createdBooking,
   });
 });
-
 // @desc    Create new booking from admin dashboard
 // @route   POST /api/bookings
 // @access  Private (admin)
@@ -320,6 +351,8 @@ exports.createAdminBooking = asyncHandler(async (req, res, next) => {
     pickupLocation,
     returnLocation,
   } = req.body;
+
+  console.log("Admin booking request:", req.body);
 
   // Verify customer exists and is active
   const customer = await Customer.findByPk(customerId);
@@ -352,8 +385,26 @@ exports.createAdminBooking = asyncHandler(async (req, res, next) => {
     );
   }
 
-  // Create booking
+  // FIXED: Calculate required fields BEFORE creating booking
+  const pickup = new Date(pickupDate);
+  const returnD = new Date(returnDate);
+  const diffTime = Math.abs(returnD.getTime() - pickup.getTime());
+  const totalDays = Math.max(1, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
+  const totalAmount = parseFloat(vehicle.price) * totalDays;
+
+  // FIXED: Generate booking number BEFORE creating booking
+  const bookingNumber = await Booking.generateBookingNumber();
+
+  console.log("Calculated values:", {
+    bookingNumber,
+    totalDays,
+    totalAmount,
+    dailyRate: vehicle.price,
+  });
+
+  // FIXED: Create booking with ALL required fields explicitly set
   const booking = await Booking.create({
+    bookingNumber, // FIXED: Explicitly provided
     customerId,
     vehicleId,
     pickupDate,
@@ -363,11 +414,20 @@ exports.createAdminBooking = asyncHandler(async (req, res, next) => {
     pickupLocation,
     returnLocation,
     dailyRate: vehicle.price,
+    totalDays, // FIXED: Explicitly calculated
+    totalAmount, // FIXED: Explicitly calculated
     createdById: req.admin.id,
     source: "admin",
     status: "confirmed", // Admin bookings are auto-confirmed
     confirmedById: req.admin.id,
     confirmedAt: new Date(),
+  });
+
+  console.log("Created admin booking:", {
+    id: booking.id,
+    bookingNumber: booking.bookingNumber,
+    totalDays: booking.totalDays,
+    totalAmount: booking.totalAmount,
   });
 
   // Update customer and vehicle stats

@@ -1,4 +1,4 @@
-// src/routes/bookings.js - Complete updated routes for website and admin bookings
+// src/routes/bookings.js - FIXED: Separate validation for website vs admin bookings
 const express = require("express");
 const {
   getBookings,
@@ -18,8 +18,8 @@ const {
 
 const { protect, authorize } = require("../middleware/auth");
 const {
-  validateBooking,
-  validateAdminBooking,
+  validateWebsiteBooking, // FIXED: Use separate validation for website
+  validateAdminBooking, // FIXED: Use separate validation for admin
   validateBookingUpdate,
   validateUUID,
   validatePagination,
@@ -27,8 +27,8 @@ const {
 
 const router = express.Router();
 
-// Public route for website bookings
-router.post("/website", validateBooking, createWebsiteBooking);
+// FIXED: Public route for website bookings with website-specific validation
+router.post("/website", validateWebsiteBooking, createWebsiteBooking);
 
 // All other routes require authentication and admin role
 router.use(protect);
@@ -38,7 +38,7 @@ router.use(authorize("admin", "super-admin"));
 router.get("/", validatePagination, getBookings);
 router.get("/stats", getBookingStats);
 
-// Admin booking creation
+// FIXED: Admin booking creation with admin-specific validation
 router.post("/", validateAdminBooking, createAdminBooking);
 
 // Availability check
