@@ -872,3 +872,151 @@ exports.getCustomerBookings = asyncHandler(async (req, res, next) => {
     data: bookings,
   });
 });
+// @desc    Get vehicle availability calendar (blocked dates)
+// @route   GET /api/bookings/calendar/:vehicleId
+// @access  Public
+exports.getVehicleCalendar = asyncHandler(async (req, res, next) => {
+  const { vehicleId } = req.params;
+  const { startDate, endDate } = req.query;
+
+  console.log(
+    "Getting calendar for vehicle:",
+    vehicleId,
+    "from",
+    startDate,
+    "to",
+    endDate
+  );
+
+  // Default to next 90 days if no dates provided
+  const today = new Date();
+  const start = startDate ? new Date(startDate) : today;
+  const end = endDate
+    ? new Date(endDate)
+    : new Date(today.getTime() + 90 * 24 * 60 * 60 * 1000);
+
+  const vehicle = await Vehicle.findByPk(vehicleId);
+  if (!vehicle) {
+    return next(new ErrorResponse("Vehicle not found", 404));
+  }
+
+  // Get all confirmed/active bookings for this vehicle in the date range
+  const bookings = await Booking.findAll({
+    where: {
+      vehicleId,
+      status: ["confirmed", "active"],
+      [Op.or]: [
+        {
+          pickupDate: {
+            [Op.between]: [
+              start.toISOString().split("T")[0],
+              end.toISOString().split("T")[0],
+            ],
+          },
+        },
+        {
+          returnDate: {
+            [Op.between]: [
+              start.toISOString().split("T")[0],
+              end.toISOString().split("T")[0],
+            ],
+          },
+        },
+        {
+          [Op.and]: [
+            { pickupDate: { [Op.lte]: start.toISOString().split("T")[0] } },
+            { returnDate: { [Op.gte]: end.toISOString().split("T")[0] } },
+          ],
+        },
+      ],
+    },
+    attributes: ["id", "bookingNumber", "pickupDate", "returnDate", "status"],
+    include: [
+      {
+        model: Customer,
+        as: "customer",
+        attributes: ["firstName", "lastName"],
+      },
+    ],
+    order: [["pickupDate", "ASC"]],
+  });
+
+  console.log("Found bookings:", bookings.length);
+
+  // Generate array of blocked dates
+  const blockedDates = [];
+  const bookedPeriods = [];
+
+  bookings.forEach((booking) => {
+    const pickup = new Date(booking.pickupDate);
+    const returnDate = new Date(booking.returnDate);
+
+    console.log(
+      "Processing booking:",
+      booking.bookingNumber,
+      "from",
+      booking.pickupDate,
+      "to",
+      booking.returnDate
+    );
+
+    // Add booking period info
+    bookedPeriods.push({
+      id: booking.id,
+      bookingNumber: booking.bookingNumber,
+      pickupDate: booking.pickupDate,
+      returnDate: booking.returnDate,
+      status: booking.status,
+      customerName: booking.customer
+        ? `${booking.customer.firstName} ${booking.customer.lastName}`
+        : "Unknown Customer",
+    });
+
+    // Generate all dates in the booking range
+    const currentDate = new Date(pickup);
+    while (currentDate <= returnDate) {
+      const dateStr = currentDate.toISOString().split("T")[0];
+      blockedDates.push(dateStr);
+      currentDate.setDate(currentDate.getDate() + 1);
+    }
+  });
+
+  // Remove duplicates from blocked dates
+  const uniqueBlockedDates = [...new Set(blockedDates)];
+  console.log("Blocked dates:", uniqueBlockedDates);
+
+  // Determine current availability status
+  const todayStr = today.toISOString().split("T")[0];
+  const currentBooking = bookedPeriods.find(
+    (period) => todayStr >= period.pickupDate && todayStr <= period.returnDate
+  );
+
+  let nextAvailableDate = null;
+  if (currentBooking) {
+    const returnDate = new Date(currentBooking.returnDate);
+    returnDate.setDate(returnDate.getDate() + 1);
+    nextAvailableDate = returnDate.toISOString().split("T")[0];
+  }
+
+  console.log("Current booking:", currentBooking);
+  console.log("Upcoming booking:", upcomingBooking);
+  console.log("Is currently available:", isCurrentlyAvailable);
+  console.log("Next available:", nextAvailableDate);
+
+  res.status(200).json({
+    success: true,
+    data: {
+      vehicleId,
+      available: isCurrentlyAvailable,
+      currentBooking: currentBooking || null,
+      upcomingBooking: upcomingBooking || null,
+      nextAvailableDate,
+      blockedDates: uniqueBlockedDates,
+      bookedPeriods,
+      searchPeriod: {
+        startDate: start.toISOString().split("T")[0],
+        endDate: end.toISOString().split("T")[0],
+      },
+    },
+  });
+});
