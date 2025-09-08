@@ -197,6 +197,7 @@ exports.createWebsiteBooking = asyncHandler(async (req, res, next) => {
   // Check for validation errors
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
+    console.error("Validation errors:", errors.array());
     return next(new ErrorResponse("Validation failed", 400, errors.array()));
   }
 
@@ -218,118 +219,167 @@ exports.createWebsiteBooking = asyncHandler(async (req, res, next) => {
 
   console.log("Website booking request:", req.body);
 
-  // Verify vehicle exists and is available
-  const vehicle = await Vehicle.findByPk(vehicleId);
-  if (!vehicle) {
-    return next(new ErrorResponse("Vehicle not found", 404));
-  }
-  if (!vehicle.available || vehicle.status !== "active") {
-    return next(new ErrorResponse("Vehicle is not available", 400));
-  }
+  try {
+    // Verify vehicle exists and is active (REMOVED available check)
+    const vehicle = await Vehicle.findByPk(vehicleId);
+    if (!vehicle) {
+      return next(new ErrorResponse("Vehicle not found", 404));
+    }
 
-  // Check vehicle availability for the requested dates
-  const isAvailable = await Booking.checkVehicleAvailability(
-    vehicleId,
-    pickupDate,
-    returnDate
-  );
+    // FIXED: Only check if vehicle status is active, not the available flag
+    if (vehicle.status !== "active") {
+      return next(new ErrorResponse("Vehicle is not active", 400));
+    }
 
-  if (!isAvailable) {
+    // FIXED: Check ACTUAL availability for the requested dates (this is the important check)
+    const isAvailable = await Booking.checkVehicleAvailability(
+      vehicleId,
+      pickupDate,
+      returnDate
+    );
+
+    if (!isAvailable) {
+      // Get conflicting bookings for better error message
+      const conflictingBookings = await Booking.findAll({
+        where: {
+          vehicleId,
+          status: ["confirmed", "active"],
+          [Op.or]: [
+            {
+              pickupDate: {
+                [Op.between]: [pickupDate, returnDate],
+              },
+            },
+            {
+              returnDate: {
+                [Op.between]: [pickupDate, returnDate],
+              },
+            },
+            {
+              [Op.and]: [
+                { pickupDate: { [Op.lte]: pickupDate } },
+                { returnDate: { [Op.gte]: returnDate } },
+              ],
+            },
+          ],
+        },
+        attributes: ["bookingNumber", "pickupDate", "returnDate"],
+      });
+
+      const conflictDetails = conflictingBookings
+        .map(
+          (booking) =>
+            `${booking.bookingNumber} (${booking.pickupDate} to ${booking.returnDate})`
+        )
+        .join(", ");
+
+      return next(
+        new ErrorResponse(
+          `Vehicle is not available for the selected dates. Conflicting with: ${conflictDetails}`,
+          409
+        )
+      );
+    }
+
+    // Calculate required fields BEFORE creating booking
+    const pickup = new Date(pickupDate);
+    const returnD = new Date(returnDate);
+    const diffTime = Math.abs(returnD.getTime() - pickup.getTime());
+    const totalDays = Math.max(1, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
+    const totalAmount = parseFloat(vehicle.price) * totalDays;
+
+    // Generate booking number BEFORE creating booking
+    const bookingNumber = await Booking.generateBookingNumber();
+
+    console.log("Calculated values:", {
+      bookingNumber,
+      totalDays,
+      totalAmount,
+      dailyRate: vehicle.price,
+      requestedDates: { pickupDate, returnDate },
+      isAvailable,
+    });
+
+    // Find or create customer
+    let customer = null;
+
+    // First try to find by phone (primary identifier)
+    customer = await Customer.findOne({ where: { phone } });
+
+    // If not found by phone, try by email (if provided)
+    if (!customer && email) {
+      customer = await Customer.findOne({ where: { email } });
+    }
+
+    // If customer doesn't exist, create new one
+    if (!customer) {
+      customer = await Customer.create({
+        firstName,
+        lastName,
+        phone,
+        email: email || null, // Email is optional
+        source: "website",
+        status: "active",
+      });
+      console.log("Created new customer:", customer.id);
+    } else {
+      console.log("Found existing customer:", customer.id);
+    }
+
+    // Create booking with ALL required fields explicitly set
+    const booking = await Booking.create({
+      bookingNumber, // Explicitly provided
+      customerId: customer.id,
+      vehicleId,
+      pickupDate,
+      returnDate,
+      pickupTime,
+      returnTime,
+      pickupLocation,
+      returnLocation,
+      dailyRate: vehicle.price,
+      totalDays, // Explicitly calculated
+      totalAmount, // Explicitly calculated
+      source: "website",
+      status: "pending", // Website bookings start as pending
+    });
+
+    console.log("Created booking successfully:", {
+      id: booking.id,
+      bookingNumber: booking.bookingNumber,
+      totalDays: booking.totalDays,
+      totalAmount: booking.totalAmount,
+      status: booking.status,
+    });
+
+    // Fetch the created booking with associations
+    const createdBooking = await Booking.findByPk(booking.id, {
+      include: [
+        {
+          model: Customer,
+          as: "customer",
+          attributes: ["id", "firstName", "lastName", "email", "phone"],
+        },
+        {
+          model: Vehicle,
+          as: "vehicle",
+          attributes: ["id", "name", "brand", "year", "licensePlate"],
+        },
+      ],
+    });
+
+    res.status(201).json({
+      success: true,
+      message:
+        "Booking request submitted successfully. We will contact you soon to confirm.",
+      data: createdBooking,
+    });
+  } catch (error) {
+    console.error("Error in createWebsiteBooking:", error);
     return next(
-      new ErrorResponse("Vehicle is not available for the selected dates", 400)
+      new ErrorResponse("Failed to create booking. Please try again.", 500)
     );
   }
-
-  // FIXED: Calculate required fields BEFORE creating booking
-  const pickup = new Date(pickupDate);
-  const returnD = new Date(returnDate);
-  const diffTime = Math.abs(returnD.getTime() - pickup.getTime());
-  const totalDays = Math.max(1, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
-  const totalAmount = parseFloat(vehicle.price) * totalDays;
-
-  // FIXED: Generate booking number BEFORE creating booking
-  const bookingNumber = await Booking.generateBookingNumber();
-
-  console.log("Calculated values:", {
-    bookingNumber,
-    totalDays,
-    totalAmount,
-    dailyRate: vehicle.price,
-  });
-
-  // Find or create customer
-  let customer = null;
-
-  // First try to find by phone (primary identifier)
-  customer = await Customer.findOne({ where: { phone } });
-
-  // If not found by phone, try by email (if provided)
-  if (!customer && email) {
-    customer = await Customer.findOne({ where: { email } });
-  }
-
-  // If customer doesn't exist, create new one
-  if (!customer) {
-    customer = await Customer.create({
-      firstName,
-      lastName,
-      phone,
-      email: email || null, // Email is optional
-      source: "website",
-      status: "active",
-    });
-    console.log("Created new customer:", customer.id);
-  } else {
-    console.log("Found existing customer:", customer.id);
-  }
-
-  // FIXED: Create booking with ALL required fields explicitly set
-  const booking = await Booking.create({
-    bookingNumber, // FIXED: Explicitly provided
-    customerId: customer.id,
-    vehicleId,
-    pickupDate,
-    returnDate,
-    pickupTime,
-    returnTime,
-    pickupLocation,
-    returnLocation,
-    dailyRate: vehicle.price,
-    totalDays, // FIXED: Explicitly calculated
-    totalAmount, // FIXED: Explicitly calculated
-    source: "website",
-    status: "pending", // Website bookings start as pending
-  });
-
-  console.log("Created booking:", {
-    id: booking.id,
-    bookingNumber: booking.bookingNumber,
-    totalDays: booking.totalDays,
-    totalAmount: booking.totalAmount,
-  });
-
-  // Fetch the created booking with associations
-  const createdBooking = await Booking.findByPk(booking.id, {
-    include: [
-      {
-        model: Customer,
-        as: "customer",
-        attributes: ["id", "firstName", "lastName", "email", "phone"],
-      },
-      {
-        model: Vehicle,
-        as: "vehicle",
-        attributes: ["id", "name", "brand", "year", "licensePlate"],
-      },
-    ],
-  });
-
-  res.status(201).json({
-    success: true,
-    message:
-      "Booking request submitted successfully. We will contact you soon to confirm.",
-    data: createdBooking,
-  });
 });
 // @desc    Create new booking from admin dashboard
 // @route   POST /api/bookings
@@ -363,16 +413,18 @@ exports.createAdminBooking = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse("Customer account is not active", 400));
   }
 
-  // Verify vehicle exists and is available
+  // Verify vehicle exists and is active (REMOVED available check)
   const vehicle = await Vehicle.findByPk(vehicleId);
   if (!vehicle) {
     return next(new ErrorResponse("Vehicle not found", 404));
   }
-  if (!vehicle.available || vehicle.status !== "active") {
-    return next(new ErrorResponse("Vehicle is not available", 400));
+
+  // FIXED: Only check if vehicle status is active, not the available flag
+  if (vehicle.status !== "active") {
+    return next(new ErrorResponse("Vehicle is not active", 400));
   }
 
-  // Check vehicle availability for the requested dates
+  // FIXED: Check ACTUAL availability for the requested dates
   const isAvailable = await Booking.checkVehicleAvailability(
     vehicleId,
     pickupDate,
@@ -586,12 +638,12 @@ exports.confirmBooking = asyncHandler(async (req, res, next) => {
     );
   }
 
-  // Verify vehicle is still available
+  // Verify vehicle is still available for these dates
   const isAvailable = await Booking.checkVehicleAvailability(
     booking.vehicleId,
     booking.pickupDate,
     booking.returnDate,
-    booking.id
+    booking.id // Exclude current booking from check
   );
 
   if (!isAvailable) {
@@ -609,17 +661,28 @@ exports.confirmBooking = asyncHandler(async (req, res, next) => {
     confirmedAt: new Date(),
   });
 
-  // Update customer and vehicle stats if not already done
+  // Update customer and vehicle stats
   const customer = await Customer.findByPk(booking.customerId);
   const vehicle = await Vehicle.findByPk(booking.vehicleId);
 
   await customer.incrementBookings(booking.totalAmount);
   await vehicle.incrementBookings();
 
-  // Make vehicle unavailable if booking starts today or in the past
-  const today = new Date().toISOString().split("T")[0];
-  if (booking.pickupDate <= today) {
+  // FIXED: Only make vehicle unavailable if booking starts today or in the past
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const pickupDate = new Date(booking.pickupDate);
+  pickupDate.setHours(0, 0, 0, 0);
+
+  if (pickupDate <= today) {
     await vehicle.update({ available: false });
+    console.log(
+      "Vehicle marked as unavailable because booking starts today or earlier"
+    );
+  } else {
+    console.log(
+      "Vehicle remains available because booking starts in the future"
+    );
   }
 
   res.status(200).json({
@@ -713,9 +776,10 @@ exports.completeBooking = asyncHandler(async (req, res, next) => {
     status: "completed",
   });
 
-  // Make vehicle available again
+  // FIXED: Always make vehicle available again when booking is completed
   const vehicle = await Vehicle.findByPk(booking.vehicleId);
   await vehicle.update({ available: true });
+  console.log("Vehicle marked as available because booking is completed");
 
   res.status(200).json({
     success: true,
@@ -943,7 +1007,7 @@ exports.getVehicleCalendar = asyncHandler(async (req, res, next) => {
 
   console.log("Found bookings:", bookings.length);
 
-  // Generate array of blocked dates
+  // Generate array of blocked dates and booking periods
   const blockedDates = [];
   const bookedPeriods = [];
 
@@ -972,7 +1036,7 @@ exports.getVehicleCalendar = asyncHandler(async (req, res, next) => {
         : "Unknown Customer",
     });
 
-    // Generate all dates in the booking range
+    // Generate all dates in the booking range (inclusive)
     const currentDate = new Date(pickup);
     while (currentDate <= returnDate) {
       const dateStr = currentDate.toISOString().split("T")[0];
@@ -987,10 +1051,24 @@ exports.getVehicleCalendar = asyncHandler(async (req, res, next) => {
 
   // Determine current availability status
   const todayStr = today.toISOString().split("T")[0];
+
+  // Find current booking (if vehicle is currently rented)
   const currentBooking = bookedPeriods.find(
     (period) => todayStr >= period.pickupDate && todayStr <= period.returnDate
   );
 
+  // Find upcoming booking (next booking after today)
+  const upcomingBooking = bookedPeriods
+    .filter((period) => period.pickupDate > todayStr)
+    .sort(
+      (a, b) =>
+        new Date(a.pickupDate).getTime() - new Date(b.pickupDate).getTime()
+    )[0];
+
+  // Determine if currently available
+  const isCurrentlyAvailable = !currentBooking;
+
+  // Calculate next available date
   let nextAvailableDate = null;
   if (currentBooking) {
     const returnDate = new Date(currentBooking.returnDate);
