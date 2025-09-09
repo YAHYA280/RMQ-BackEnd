@@ -792,37 +792,46 @@ exports.completeBooking = asyncHandler(async (req, res, next) => {
 // @route   GET /api/bookings/stats
 // @access  Private (admin)
 exports.getBookingStats = asyncHandler(async (req, res, next) => {
-  const stats = await Booking.getBookingStats();
-
-  // Get monthly booking trends (last 12 months)
+  // SIMPLIFIED: Only get the 4 stats you requested
   const { sequelize } = require("../config/database");
 
-  const monthlyTrends = await Booking.findAll({
+  const stats = await Booking.findAll({
     attributes: [
+      [sequelize.fn("COUNT", sequelize.col("id")), "totalBookings"],
       [
-        sequelize.fn("DATE_TRUNC", "month", sequelize.col("createdAt")),
-        "month",
+        sequelize.fn(
+          "COUNT",
+          sequelize.literal("CASE WHEN status = 'pending' THEN 1 END")
+        ),
+        "pendingBookings",
       ],
-      [sequelize.fn("COUNT", sequelize.col("id")), "bookings"],
-      [sequelize.fn("SUM", sequelize.col("totalAmount")), "revenue"],
-    ],
-    where: {
-      createdAt: {
-        [Op.gte]: new Date(new Date().setMonth(new Date().getMonth() - 12)),
-      },
-    },
-    group: [sequelize.fn("DATE_TRUNC", "month", sequelize.col("createdAt"))],
-    order: [
-      [sequelize.fn("DATE_TRUNC", "month", sequelize.col("createdAt")), "DESC"],
+      [
+        sequelize.fn(
+          "COUNT",
+          sequelize.literal("CASE WHEN status = 'active' THEN 1 END")
+        ),
+        "activeBookings",
+      ],
+      [sequelize.fn("SUM", sequelize.col("totalAmount")), "totalRevenue"],
     ],
     raw: true,
   });
 
+  // Convert strings to numbers and handle null values
+  const result = stats[0];
+  const transformedStats = {
+    totalBookings: parseInt(result.totalBookings) || 0,
+    pendingBookings: parseInt(result.pendingBookings) || 0,
+    activeBookings: parseInt(result.activeBookings) || 0,
+    totalRevenue: parseFloat(result.totalRevenue) || 0,
+  };
+
+  console.log("Booking stats result:", transformedStats); // Debug log
+
   res.status(200).json({
     success: true,
     data: {
-      overview: stats,
-      monthlyTrends,
+      overview: transformedStats,
     },
   });
 });

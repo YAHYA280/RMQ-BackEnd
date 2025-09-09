@@ -1,4 +1,3 @@
-// src/routes/bookings.js - FIXED: Public routes before auth middleware
 const express = require("express");
 const {
   getBookings,
@@ -11,10 +10,10 @@ const {
   cancelBooking,
   markAsPickedUp,
   completeBooking,
-  getBookingStats,
+  getBookingStats, // MAKE SURE THIS IS IMPORTED
   checkAvailability,
   getCustomerBookings,
-  getVehicleCalendar, // ADD THIS
+  getVehicleCalendar,
 } = require("../controllers/bookings");
 
 const { protect, authorize } = require("../middleware/auth");
@@ -42,9 +41,11 @@ router.post("/website", validateWebsiteBooking, createWebsiteBooking);
 router.use(protect);
 router.use(authorize("admin", "super-admin"));
 
+// IMPORTANT: Stats route MUST come before "/:id" route to avoid conflicts
+router.get("/stats", getBookingStats); // FIXED: Position this BEFORE /:id routes
+
 // Booking management routes
 router.get("/", validatePagination, getBookings);
-router.get("/stats", getBookingStats);
 
 // Admin booking creation
 router.post("/", validateAdminBooking, createAdminBooking);
@@ -55,7 +56,7 @@ router.get("/availability/:vehicleId", validateUUID, checkAvailability);
 // Customer bookings (admin only)
 router.get("/customer/:customerId", validateUUID, getCustomerBookings);
 
-// Single booking routes
+// Single booking routes (THESE MUST COME AFTER /stats)
 router.get("/:id", validateUUID, getBooking);
 router.put("/:id", validateUUID, validateBookingUpdate, updateBooking);
 router.delete("/:id", validateUUID, authorize("super-admin"), deleteBooking);
