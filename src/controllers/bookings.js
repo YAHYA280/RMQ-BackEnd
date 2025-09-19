@@ -4,6 +4,39 @@ const { validationResult } = require("express-validator");
 const { Op } = require("sequelize");
 const asyncHandler = require("../middleware/asyncHandler");
 const ErrorResponse = require("../utils/errorResponse");
+const calculateRentalDaysWithTimeLogic = (
+  pickupDate,
+  returnDate,
+  pickupTime,
+  returnTime
+) => {
+  // Calculate basic day difference
+  const pickupDateObj = new Date(pickupDate);
+  const returnDateObj = new Date(returnDate);
+  const basicDays = Math.ceil(
+    (returnDateObj.getTime() - pickupDateObj.getTime()) / (1000 * 60 * 60 * 24)
+  );
+
+  // Convert times to minutes for easier comparison
+  const [pickupHour, pickupMin] = pickupTime.split(":").map(Number);
+  const [returnHour, returnMin] = returnTime.split(":").map(Number);
+
+  const pickupMinutes = pickupHour * 60 + pickupMin;
+  const returnMinutes = returnHour * 60 + returnMin;
+
+  // Your logic: if return time is more than 1 hour after pickup time, add 1 day
+  const timeDifference = returnMinutes - pickupMinutes;
+  const oneHourInMinutes = 60;
+
+  let rentalDays = basicDays;
+
+  // If return time exceeds pickup time by more than 1 hour, add extra day
+  if (timeDifference > oneHourInMinutes) {
+    rentalDays += 1;
+  }
+
+  return Math.max(1, rentalDays);
+};
 
 // @desc    Get all bookings with filtering and pagination
 // @route   GET /api/bookings
@@ -220,18 +253,17 @@ exports.createWebsiteBooking = asyncHandler(async (req, res, next) => {
   console.log("Website booking request:", req.body);
 
   try {
-    // Verify vehicle exists and is active (REMOVED available check)
+    // Verify vehicle exists and is active
     const vehicle = await Vehicle.findByPk(vehicleId);
     if (!vehicle) {
       return next(new ErrorResponse("Vehicle not found", 404));
     }
 
-    // FIXED: Only check if vehicle status is active, not the available flag
     if (vehicle.status !== "active") {
       return next(new ErrorResponse("Vehicle is not active", 400));
     }
 
-    // FIXED: Check ACTUAL availability for the requested dates (this is the important check)
+    // Check ACTUAL availability for the requested dates
     const isAvailable = await Booking.checkVehicleAvailability(
       vehicleId,
       pickupDate,
@@ -239,7 +271,6 @@ exports.createWebsiteBooking = asyncHandler(async (req, res, next) => {
     );
 
     if (!isAvailable) {
-      // Get conflicting bookings for better error message
       const conflictingBookings = await Booking.findAll({
         where: {
           vehicleId,
@@ -281,22 +312,25 @@ exports.createWebsiteBooking = asyncHandler(async (req, res, next) => {
       );
     }
 
-    // Calculate required fields BEFORE creating booking
-    const pickup = new Date(pickupDate);
-    const returnD = new Date(returnDate);
-    const diffTime = Math.abs(returnD.getTime() - pickup.getTime());
-    const totalDays = Math.max(1, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
+    // UPDATED: Calculate required fields using your time logic
+    const totalDays = calculateRentalDaysWithTimeLogic(
+      pickupDate,
+      returnDate,
+      pickupTime,
+      returnTime
+    );
     const totalAmount = parseFloat(vehicle.price) * totalDays;
 
-    // Generate booking number BEFORE creating booking
+    // Generate booking number
     const bookingNumber = await Booking.generateBookingNumber();
 
-    console.log("Calculated values:", {
+    console.log("Calculated values with time logic:", {
       bookingNumber,
       totalDays,
       totalAmount,
       dailyRate: vehicle.price,
       requestedDates: { pickupDate, returnDate },
+      requestedTimes: { pickupTime, returnTime },
       isAvailable,
     });
 
@@ -317,7 +351,7 @@ exports.createWebsiteBooking = asyncHandler(async (req, res, next) => {
         firstName,
         lastName,
         phone,
-        email: email || null, // Email is optional
+        email: email || null,
         source: "website",
         status: "active",
       });
@@ -328,7 +362,7 @@ exports.createWebsiteBooking = asyncHandler(async (req, res, next) => {
 
     // Create booking with ALL required fields explicitly set
     const booking = await Booking.create({
-      bookingNumber, // Explicitly provided
+      bookingNumber,
       customerId: customer.id,
       vehicleId,
       pickupDate,
@@ -338,18 +372,20 @@ exports.createWebsiteBooking = asyncHandler(async (req, res, next) => {
       pickupLocation,
       returnLocation,
       dailyRate: vehicle.price,
-      totalDays, // Explicitly calculated
-      totalAmount, // Explicitly calculated
+      totalDays,
+      totalAmount,
       source: "website",
-      status: "pending", // Website bookings start as pending
+      status: "pending",
     });
 
-    console.log("Created booking successfully:", {
+    console.log("Created booking successfully with time logic:", {
       id: booking.id,
       bookingNumber: booking.bookingNumber,
       totalDays: booking.totalDays,
       totalAmount: booking.totalAmount,
       status: booking.status,
+      pickupTime: booking.pickupTime,
+      returnTime: booking.returnTime,
     });
 
     // Fetch the created booking with associations
@@ -413,18 +449,17 @@ exports.createAdminBooking = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse("Customer account is not active", 400));
   }
 
-  // Verify vehicle exists and is active (REMOVED available check)
+  // Verify vehicle exists and is active
   const vehicle = await Vehicle.findByPk(vehicleId);
   if (!vehicle) {
     return next(new ErrorResponse("Vehicle not found", 404));
   }
 
-  // FIXED: Only check if vehicle status is active, not the available flag
   if (vehicle.status !== "active") {
     return next(new ErrorResponse("Vehicle is not active", 400));
   }
 
-  // FIXED: Check ACTUAL availability for the requested dates
+  // Check ACTUAL availability for the requested dates
   const isAvailable = await Booking.checkVehicleAvailability(
     vehicleId,
     pickupDate,
@@ -437,26 +472,29 @@ exports.createAdminBooking = asyncHandler(async (req, res, next) => {
     );
   }
 
-  // FIXED: Calculate required fields BEFORE creating booking
-  const pickup = new Date(pickupDate);
-  const returnD = new Date(returnDate);
-  const diffTime = Math.abs(returnD.getTime() - pickup.getTime());
-  const totalDays = Math.max(1, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
+  // UPDATED: Calculate required fields using your time logic
+  const totalDays = calculateRentalDaysWithTimeLogic(
+    pickupDate,
+    returnDate,
+    pickupTime,
+    returnTime
+  );
   const totalAmount = parseFloat(vehicle.price) * totalDays;
 
-  // FIXED: Generate booking number BEFORE creating booking
+  // Generate booking number
   const bookingNumber = await Booking.generateBookingNumber();
 
-  console.log("Calculated values:", {
+  console.log("Calculated values with time logic:", {
     bookingNumber,
     totalDays,
     totalAmount,
     dailyRate: vehicle.price,
+    requestedTimes: { pickupTime, returnTime },
   });
 
-  // FIXED: Create booking with ALL required fields explicitly set
+  // Create booking with ALL required fields explicitly set
   const booking = await Booking.create({
-    bookingNumber, // FIXED: Explicitly provided
+    bookingNumber,
     customerId,
     vehicleId,
     pickupDate,
@@ -466,20 +504,22 @@ exports.createAdminBooking = asyncHandler(async (req, res, next) => {
     pickupLocation,
     returnLocation,
     dailyRate: vehicle.price,
-    totalDays, // FIXED: Explicitly calculated
-    totalAmount, // FIXED: Explicitly calculated
+    totalDays,
+    totalAmount,
     createdById: req.admin.id,
     source: "admin",
-    status: "confirmed", // Admin bookings are auto-confirmed
+    status: "confirmed",
     confirmedById: req.admin.id,
     confirmedAt: new Date(),
   });
 
-  console.log("Created admin booking:", {
+  console.log("Created admin booking with time logic:", {
     id: booking.id,
     bookingNumber: booking.bookingNumber,
     totalDays: booking.totalDays,
     totalAmount: booking.totalAmount,
+    pickupTime: booking.pickupTime,
+    returnTime: booking.returnTime,
   });
 
   // Update customer and vehicle stats

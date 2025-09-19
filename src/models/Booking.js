@@ -1,4 +1,4 @@
-// src/models/Booking.js - FIXED: Updated for proper booking number generation and validation
+// src/models/Booking.js - Complete Updated Version with Time Logic
 const { DataTypes } = require("sequelize");
 const { sequelize } = require("../config/database");
 
@@ -150,19 +150,17 @@ const Booking = sequelize.define(
     tableName: "bookings",
     timestamps: true,
     hooks: {
-      // REMOVED beforeCreate hook - we'll handle this manually in controller
       beforeUpdate: async (booking) => {
-        // Recalculate totals if relevant fields changed
+        // Recalculate totals if relevant fields changed (now includes time fields)
         if (
           booking.changed("dailyRate") ||
           booking.changed("pickupDate") ||
-          booking.changed("returnDate")
+          booking.changed("returnDate") ||
+          booking.changed("pickupTime") ||
+          booking.changed("returnTime")
         ) {
-          const pickupDate = new Date(booking.pickupDate);
-          const returnDate = new Date(booking.returnDate);
-          const diffTime = Math.abs(returnDate - pickupDate);
-          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-          booking.totalDays = Math.max(1, diffDays);
+          // Use the new time logic calculation
+          booking.totalDays = booking.calculateRentalDays();
           booking.totalAmount =
             parseFloat(booking.dailyRate) * booking.totalDays;
         }
@@ -211,6 +209,82 @@ const Booking = sequelize.define(
 );
 
 // Instance methods
+
+// UPDATED: Calculate rental days with time logic
+Booking.prototype.calculateRentalDays = function () {
+  if (
+    !this.pickupDate ||
+    !this.returnDate ||
+    !this.pickupTime ||
+    !this.returnTime
+  ) {
+    return 0;
+  }
+
+  // Calculate basic day difference
+  const pickupDate = new Date(this.pickupDate);
+  const returnDate = new Date(this.returnDate);
+  const basicDays = Math.ceil(
+    (returnDate.getTime() - pickupDate.getTime()) / (1000 * 60 * 60 * 24)
+  );
+
+  // Convert times to minutes for easier comparison
+  const [pickupHour, pickupMin] = this.pickupTime.split(":").map(Number);
+  const [returnHour, returnMin] = this.returnTime.split(":").map(Number);
+
+  const pickupMinutes = pickupHour * 60 + pickupMin;
+  const returnMinutes = returnHour * 60 + returnMin;
+
+  // Your logic: if return time is more than 1 hour after pickup time, add 1 day
+  const timeDifference = returnMinutes - pickupMinutes;
+  const oneHourInMinutes = 60;
+
+  let rentalDays = basicDays;
+
+  // If return time exceeds pickup time by more than 1 hour, add extra day
+  if (timeDifference > oneHourInMinutes) {
+    rentalDays += 1;
+  }
+
+  return Math.max(1, rentalDays);
+};
+
+// NEW: Get time difference info for display
+Booking.prototype.getTimeExcessInfo = function () {
+  if (!this.pickupTime || !this.returnTime) {
+    return null;
+  }
+
+  const [pickupHour, pickupMin] = this.pickupTime.split(":").map(Number);
+  const [returnHour, returnMin] = this.returnTime.split(":").map(Number);
+
+  const pickupMinutes = pickupHour * 60 + pickupMin;
+  const returnMinutes = returnHour * 60 + returnMin;
+
+  const timeDifference = returnMinutes - pickupMinutes;
+  const oneHourInMinutes = 60;
+
+  if (timeDifference > oneHourInMinutes) {
+    const excessMinutes = timeDifference - oneHourInMinutes;
+    const excessHours = Math.floor(excessMinutes / 60);
+    const remainingMinutes = excessMinutes % 60;
+
+    return {
+      hasExcess: true,
+      excessHours,
+      excessMinutes: remainingMinutes,
+      totalExcessMinutes: excessMinutes,
+      message: `Return time exceeds pickup time by ${excessHours}h ${remainingMinutes}m (1 day grace period exceeded)`,
+    };
+  }
+
+  return {
+    hasExcess: false,
+    message: "Within 1-hour grace period",
+  };
+};
+
+// LEGACY: Original duration method (kept for backward compatibility)
 Booking.prototype.getDuration = function () {
   const pickup = new Date(this.pickupDate);
   const returnDate = new Date(this.returnDate);
@@ -229,6 +303,30 @@ Booking.prototype.canBeCancelled = function () {
   const allowedStatuses = ["pending", "confirmed"];
   return allowedStatuses.includes(this.status);
 };
+
+// NEW: Check if booking has time-based extra charges
+Booking.prototype.hasTimeExtraCharge = function () {
+  const timeInfo = this.getTimeExcessInfo();
+  return timeInfo && timeInfo.hasExcess;
+};
+
+// NEW: Get formatted time display
+Booking.prototype.getFormattedTimes = function () {
+  return {
+    pickup: this.pickupTime || "00:00",
+    return: this.returnTime || "00:00",
+    pickupDateTime:
+      this.pickupDate && this.pickupTime
+        ? `${this.pickupDate} ${this.pickupTime}`
+        : null,
+    returnDateTime:
+      this.returnDate && this.returnTime
+        ? `${this.returnDate} ${this.returnTime}`
+        : null,
+  };
+};
+
+// Class methods
 
 // FIXED: Class method for generating booking numbers like BK001, BK002, etc.
 Booking.generateBookingNumber = async function () {
@@ -276,6 +374,41 @@ Booking.generateBookingNumber = async function () {
   }
 
   return bookingNumber;
+};
+
+// NEW: Static method for time calculation (for use in controllers)
+Booking.calculateRentalDaysWithTimeLogic = function (
+  pickupDate,
+  returnDate,
+  pickupTime,
+  returnTime
+) {
+  // Calculate basic day difference
+  const pickupDateObj = new Date(pickupDate);
+  const returnDateObj = new Date(returnDate);
+  const basicDays = Math.ceil(
+    (returnDateObj.getTime() - pickupDateObj.getTime()) / (1000 * 60 * 60 * 24)
+  );
+
+  // Convert times to minutes for easier comparison
+  const [pickupHour, pickupMin] = pickupTime.split(":").map(Number);
+  const [returnHour, returnMin] = returnTime.split(":").map(Number);
+
+  const pickupMinutes = pickupHour * 60 + pickupMin;
+  const returnMinutes = returnHour * 60 + returnMin;
+
+  // Your logic: if return time is more than 1 hour after pickup time, add 1 day
+  const timeDifference = returnMinutes - pickupMinutes;
+  const oneHourInMinutes = 60;
+
+  let rentalDays = basicDays;
+
+  // If return time exceeds pickup time by more than 1 hour, add extra day
+  if (timeDifference > oneHourInMinutes) {
+    rentalDays += 1;
+  }
+
+  return Math.max(1, rentalDays);
 };
 
 Booking.checkVehicleAvailability = async function (
