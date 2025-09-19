@@ -1,3 +1,4 @@
+// src/routes/bookings.js - CORRECTED: Fixed route ordering
 const express = require("express");
 const {
   getBookings,
@@ -8,12 +9,13 @@ const {
   deleteBooking,
   confirmBooking,
   cancelBooking,
-  markAsPickedUp,
-  completeBooking,
-  getBookingStats, // MAKE SURE THIS IS IMPORTED
-  checkAvailability,
-  getCustomerBookings,
-  getVehicleCalendar,
+  pickupVehicle, // Updated name (was markAsPickedUp)
+  returnVehicle, // Updated name (was completeBooking)
+  getBookingStats,
+  generateContract, // NEW: Added contract generation
+  checkAvailability, // KEPT: Your original function
+  getCustomerBookings, // KEPT: Your original function
+  getVehicleCalendar, // KEPT: Your original function
 } = require("../controllers/bookings");
 
 const { protect, authorize } = require("../middleware/auth");
@@ -41,30 +43,39 @@ router.post("/website", validateWebsiteBooking, createWebsiteBooking);
 router.use(protect);
 router.use(authorize("admin", "super-admin"));
 
-// IMPORTANT: Stats route MUST come before "/:id" route to avoid conflicts
-router.get("/stats", getBookingStats); // FIXED: Position this BEFORE /:id routes
+// CRITICAL: These specific routes MUST come before any /:id routes!
+// Otherwise Express will match /:id instead of these literal paths
 
-// Booking management routes
-router.get("/", validatePagination, getBookings);
+// 1. Stats route (literal path)
+router.get("/stats", getBookingStats);
 
-// Admin booking creation
-router.post("/", validateAdminBooking, createAdminBooking);
-
-// Availability check (admin only)
+// 2. Availability check (parameterized but specific pattern)
 router.get("/availability/:vehicleId", validateUUID, checkAvailability);
 
-// Customer bookings (admin only)
+// 3. Customer bookings (parameterized but specific pattern)
 router.get("/customer/:customerId", validateUUID, getCustomerBookings);
 
-// Single booking routes (THESE MUST COME AFTER /stats)
+// 4. General booking list (must come before /:id)
+router.get("/", validatePagination, getBookings);
+
+// 5. Admin booking creation (POST, won't conflict)
+router.post("/", validateAdminBooking, createAdminBooking);
+
+// ========== DYNAMIC ROUTES WITH :id PARAMETER ==========
+// These MUST come after all specific literal routes above!
+
+// Contract generation (specific /:id/action pattern)
+router.get("/:id/contract", validateUUID, generateContract);
+
+// Booking workflow routes (specific /:id/action patterns)
+router.put("/:id/confirm", validateUUID, confirmBooking);
+router.put("/:id/cancel", validateUUID, cancelBooking);
+router.put("/:id/pickup", validateUUID, pickupVehicle);
+router.put("/:id/return", validateUUID, returnVehicle);
+
+// Generic /:id routes (MUST be last!)
 router.get("/:id", validateUUID, getBooking);
 router.put("/:id", validateUUID, validateBookingUpdate, updateBooking);
 router.delete("/:id", validateUUID, authorize("super-admin"), deleteBooking);
-
-// Booking workflow routes
-router.put("/:id/confirm", validateUUID, confirmBooking);
-router.put("/:id/cancel", validateUUID, cancelBooking);
-router.put("/:id/pickup", validateUUID, markAsPickedUp);
-router.put("/:id/return", validateUUID, completeBooking);
 
 module.exports = router;
