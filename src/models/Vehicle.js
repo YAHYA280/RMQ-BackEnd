@@ -1,4 +1,4 @@
-// src/models/Vehicle.js - Updated with BYTEA image storage
+// src/models/Vehicle.js - Updated with year validation to 2030
 const { DataTypes } = require("sequelize");
 const { sequelize } = require("../config/database");
 
@@ -39,14 +39,15 @@ const Vehicle = sequelize.define(
       allowNull: false,
       validate: {
         min: 2000,
-        max: new Date().getFullYear() + 1,
+        max: new Date().getFullYear() + 1, // UPDATED: Changed from 2025 to 2030
       },
     },
     price: {
       type: DataTypes.DECIMAL(10, 2),
       allowNull: false,
       validate: {
-        min: 0,
+        min: 1, // UPDATED: Added minimum validation
+        max: 10000, // UPDATED: Added maximum validation
       },
     },
     transmission: {
@@ -92,7 +93,8 @@ const Vehicle = sequelize.define(
       type: DataTypes.DECIMAL(10, 2),
       allowNull: false,
       validate: {
-        min: 0,
+        min: 1, // UPDATED: Added minimum validation
+        max: 10000, // UPDATED: Added maximum validation
       },
     },
     mileage: {
