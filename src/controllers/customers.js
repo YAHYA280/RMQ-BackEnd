@@ -1,11 +1,11 @@
-// src/controllers/customers.js - FIXED: Updated with BYTEA image storage and optional fields
-const { Customer, Admin } = require("../models");
+// src/controllers/customers.js - UPDATED: Added support for passport and CIN documents
+const { Customer, Admin } = require("../models/index");
 const { validationResult } = require("express-validator");
 const { Op } = require("sequelize");
 const asyncHandler = require("../middleware/asyncHandler");
 const ErrorResponse = require("../utils/errorResponse");
 
-// Helper function to transform customer data for response
+// UPDATED: Helper function to transform customer data for response with all document types
 const transformCustomerForResponse = (customer) => {
   const customerData = customer.toJSON();
 
@@ -14,12 +14,38 @@ const transformCustomerForResponse = (customer) => {
     customerData.driverLicenseImage = {
       dataUrl: customer.getDriverLicenseImageDataUrl(),
       mimetype: customer.driverLicenseImageMimetype,
-      name: customer.driverLicenseImageName || "driver-license",
+      name: customer.driverLicenseImageName || "permis-conduire",
+    };
+  }
+
+  // NEW: Convert passport image BYTEA to data URL
+  if (customer.passportImageData && customer.passportImageMimetype) {
+    customerData.passportImage = {
+      dataUrl: customer.getPassportImageDataUrl(),
+      mimetype: customer.passportImageMimetype,
+      name: customer.passportImageName || "passeport",
+    };
+  }
+
+  // NEW: Convert CIN image BYTEA to data URL
+  if (customer.cinImageData && customer.cinImageMimetype) {
+    customerData.cinImage = {
+      dataUrl: customer.getCinImageDataUrl(),
+      mimetype: customer.cinImageMimetype,
+      name: customer.cinImageName || "cin",
     };
   }
 
   // Format phone number for display
   customerData.phoneFormatted = customer.getFormattedPhone();
+
+  // NEW: Add document completion status
+  customerData.documentCompletion = customer.hasCompleteDocumentation();
+
+  // NEW: Add age if date of birth is available
+  if (customer.dateOfBirth) {
+    customerData.age = customer.getAge();
+  }
 
   return customerData;
 };
@@ -37,6 +63,7 @@ exports.getCustomers = asyncHandler(async (req, res, next) => {
     order = "DESC",
     source,
     tier,
+    documentStatus, // NEW: Filter by document completion status
   } = req.query;
 
   // Build where clause
@@ -50,15 +77,51 @@ exports.getCustomers = asyncHandler(async (req, res, next) => {
     where.source = Array.isArray(source) ? { [Op.in]: source } : source;
   }
 
-  // Search functionality
+  // NEW: Filter by document completion status
+  if (documentStatus) {
+    switch (documentStatus) {
+      case "complete":
+        where[Op.and] = [
+          { driverLicenseNumber: { [Op.ne]: null } },
+          { passportNumber: { [Op.ne]: null } },
+          { cinNumber: { [Op.ne]: null } },
+          { dateOfBirth: { [Op.ne]: null } },
+          { address: { [Op.ne]: null } },
+        ];
+        break;
+      case "incomplete":
+        where[Op.or] = [
+          { driverLicenseNumber: { [Op.is]: null } },
+          { passportNumber: { [Op.is]: null } },
+          { cinNumber: { [Op.is]: null } },
+          { dateOfBirth: { [Op.is]: null } },
+          { address: { [Op.is]: null } },
+        ];
+        break;
+      case "no-documents":
+        where[Op.and] = [
+          { driverLicenseNumber: { [Op.is]: null } },
+          { passportNumber: { [Op.is]: null } },
+          { cinNumber: { [Op.is]: null } },
+        ];
+        break;
+    }
+  }
+
+  // UPDATED: Enhanced search functionality with new fields
   if (search) {
     where[Op.or] = [
       { firstName: { [Op.iLike]: `%${search}%` } },
       { lastName: { [Op.iLike]: `%${search}%` } },
-      // FIXED: Handle case where email might be null
       { email: { [Op.iLike]: `%${search}%` } },
       { phone: { [Op.like]: `%${search}%` } },
       { referralCode: { [Op.iLike]: `%${search}%` } },
+      // NEW: Search in document numbers
+      { driverLicenseNumber: { [Op.iLike]: `%${search}%` } },
+      { passportNumber: { [Op.iLike]: `%${search}%` } },
+      { cinNumber: { [Op.iLike]: `%${search}%` } },
+      { address: { [Op.iLike]: `%${search}%` } },
+      { city: { [Op.iLike]: `%${search}%` } },
     ];
   }
 
@@ -142,7 +205,7 @@ exports.getCustomer = asyncHandler(async (req, res, next) => {
   });
 
   if (!customer) {
-    return next(new ErrorResponse("Customer not found", 404));
+    return next(new ErrorResponse("Client non trouvé", 404));
   }
 
   // Transform customer for response
@@ -161,10 +224,10 @@ exports.createCustomer = asyncHandler(async (req, res, next) => {
   // Check for validation errors
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return next(new ErrorResponse("Validation failed", 400, errors.array()));
+    return next(new ErrorResponse("Validation échouée", 400, errors.array()));
   }
 
-  // FIXED: Only check email uniqueness if email is provided
+  // Check email uniqueness only if email is provided
   if (req.body.email && req.body.email.trim() !== "") {
     const existingCustomer = await Customer.findOne({
       where: { email: req.body.email.trim() },
@@ -172,7 +235,7 @@ exports.createCustomer = asyncHandler(async (req, res, next) => {
 
     if (existingCustomer) {
       return next(
-        new ErrorResponse("Customer with this email already exists", 400)
+        new ErrorResponse("Un client avec cet email existe déjà", 400)
       );
     }
   } else {
@@ -180,29 +243,68 @@ exports.createCustomer = asyncHandler(async (req, res, next) => {
     req.body.email = null;
   }
 
-  // FIXED: Handle driver license image upload with BYTEA storage
-  let driverLicenseImageData = null;
-  let driverLicenseImageMimetype = null;
-  let driverLicenseImageName = null;
+  // UPDATED: Handle all document image uploads
+  let documentData = {};
 
-  if (req.file) {
-    driverLicenseImageData = req.file.buffer;
-    driverLicenseImageMimetype = req.file.mimetype;
-    driverLicenseImageName = req.file.originalname;
+  // Process driver license image
+  if (
+    req.files &&
+    req.files.driverLicenseImage &&
+    req.files.driverLicenseImage[0]
+  ) {
+    const file = req.files.driverLicenseImage[0];
+    documentData.driverLicenseImageData = file.buffer;
+    documentData.driverLicenseImageMimetype = file.mimetype;
+    documentData.driverLicenseImageName = file.originalname;
   }
 
-  // Add admin tracking and driver license image data
+  // NEW: Process passport image
+  if (req.files && req.files.passportImage && req.files.passportImage[0]) {
+    const file = req.files.passportImage[0];
+    documentData.passportImageData = file.buffer;
+    documentData.passportImageMimetype = file.mimetype;
+    documentData.passportImageName = file.originalname;
+  }
+
+  // NEW: Process CIN image
+  if (req.files && req.files.cinImage && req.files.cinImage[0]) {
+    const file = req.files.cinImage[0];
+    documentData.cinImageData = file.buffer;
+    documentData.cinImageMimetype = file.mimetype;
+    documentData.cinImageName = file.originalname;
+  }
+
+  // Handle single file upload (backward compatibility)
+  if (req.file) {
+    const fieldName = req.file.fieldname;
+    switch (fieldName) {
+      case "driverLicenseImage":
+        documentData.driverLicenseImageData = req.file.buffer;
+        documentData.driverLicenseImageMimetype = req.file.mimetype;
+        documentData.driverLicenseImageName = req.file.originalname;
+        break;
+      case "passportImage":
+        documentData.passportImageData = req.file.buffer;
+        documentData.passportImageMimetype = req.file.mimetype;
+        documentData.passportImageName = req.file.originalname;
+        break;
+      case "cinImage":
+        documentData.cinImageData = req.file.buffer;
+        documentData.cinImageMimetype = req.file.mimetype;
+        documentData.cinImageName = req.file.originalname;
+        break;
+    }
+  }
+
+  // Add admin tracking and source
   req.body.createdById = req.admin.id;
   req.body.source = "admin";
 
-  if (driverLicenseImageData) {
-    req.body.driverLicenseImageData = driverLicenseImageData;
-    req.body.driverLicenseImageMimetype = driverLicenseImageMimetype;
-    req.body.driverLicenseImageName = driverLicenseImageName;
-  }
+  // Merge document data with form data
+  const customerData = { ...req.body, ...documentData };
 
   // Create customer
-  const customer = await Customer.create(req.body);
+  const customer = await Customer.create(customerData);
 
   // Fetch the created customer with associations
   const createdCustomer = await Customer.findByPk(customer.id, {
@@ -216,12 +318,12 @@ exports.createCustomer = asyncHandler(async (req, res, next) => {
   });
 
   // Transform for response
-  const customerData = transformCustomerForResponse(createdCustomer);
+  const responseData = transformCustomerForResponse(createdCustomer);
 
   res.status(201).json({
     success: true,
-    message: "Customer created successfully",
-    data: customerData,
+    message: "Client créé avec succès",
+    data: responseData,
   });
 });
 
@@ -232,16 +334,16 @@ exports.updateCustomer = asyncHandler(async (req, res, next) => {
   // Check for validation errors
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return next(new ErrorResponse("Validation failed", 400, errors.array()));
+    return next(new ErrorResponse("Validation échouée", 400, errors.array()));
   }
 
   let customer = await Customer.findByPk(req.params.id);
 
   if (!customer) {
-    return next(new ErrorResponse("Customer not found", 404));
+    return next(new ErrorResponse("Client non trouvé", 404));
   }
 
-  // FIXED: Check email uniqueness only if email is provided and changed
+  // Check email uniqueness only if email is provided and changed
   if (
     req.body.email &&
     req.body.email.trim() !== "" &&
@@ -256,7 +358,7 @@ exports.updateCustomer = asyncHandler(async (req, res, next) => {
 
     if (existingCustomer) {
       return next(
-        new ErrorResponse("Email is already in use by another customer", 400)
+        new ErrorResponse("Email déjà utilisé par un autre client", 400)
       );
     }
   } else if (!req.body.email || req.body.email.trim() === "") {
@@ -264,15 +366,64 @@ exports.updateCustomer = asyncHandler(async (req, res, next) => {
     req.body.email = null;
   }
 
-  // FIXED: Handle driver license image upload with BYTEA storage
-  if (req.file) {
-    req.body.driverLicenseImageData = req.file.buffer;
-    req.body.driverLicenseImageMimetype = req.file.mimetype;
-    req.body.driverLicenseImageName = req.file.originalname;
+  // UPDATED: Handle all document image uploads for updates
+  let documentUpdates = {};
+
+  // Process driver license image
+  if (
+    req.files &&
+    req.files.driverLicenseImage &&
+    req.files.driverLicenseImage[0]
+  ) {
+    const file = req.files.driverLicenseImage[0];
+    documentUpdates.driverLicenseImageData = file.buffer;
+    documentUpdates.driverLicenseImageMimetype = file.mimetype;
+    documentUpdates.driverLicenseImageName = file.originalname;
   }
 
+  // NEW: Process passport image
+  if (req.files && req.files.passportImage && req.files.passportImage[0]) {
+    const file = req.files.passportImage[0];
+    documentUpdates.passportImageData = file.buffer;
+    documentUpdates.passportImageMimetype = file.mimetype;
+    documentUpdates.passportImageName = file.originalname;
+  }
+
+  // NEW: Process CIN image
+  if (req.files && req.files.cinImage && req.files.cinImage[0]) {
+    const file = req.files.cinImage[0];
+    documentUpdates.cinImageData = file.buffer;
+    documentUpdates.cinImageMimetype = file.mimetype;
+    documentUpdates.cinImageName = file.originalname;
+  }
+
+  // Handle single file upload (backward compatibility)
+  if (req.file) {
+    const fieldName = req.file.fieldname;
+    switch (fieldName) {
+      case "driverLicenseImage":
+        documentUpdates.driverLicenseImageData = req.file.buffer;
+        documentUpdates.driverLicenseImageMimetype = req.file.mimetype;
+        documentUpdates.driverLicenseImageName = req.file.originalname;
+        break;
+      case "passportImage":
+        documentUpdates.passportImageData = req.file.buffer;
+        documentUpdates.passportImageMimetype = req.file.mimetype;
+        documentUpdates.passportImageName = req.file.originalname;
+        break;
+      case "cinImage":
+        documentUpdates.cinImageData = req.file.buffer;
+        documentUpdates.cinImageMimetype = req.file.mimetype;
+        documentUpdates.cinImageName = req.file.originalname;
+        break;
+    }
+  }
+
+  // Merge form data with document updates
+  const updateData = { ...req.body, ...documentUpdates };
+
   // Update customer
-  await customer.update(req.body);
+  await customer.update(updateData);
 
   // Fetch updated customer with associations
   const updatedCustomer = await Customer.findByPk(req.params.id, {
@@ -286,12 +437,12 @@ exports.updateCustomer = asyncHandler(async (req, res, next) => {
   });
 
   // Transform for response
-  const customerData = transformCustomerForResponse(updatedCustomer);
+  const responseData = transformCustomerForResponse(updatedCustomer);
 
   res.status(200).json({
     success: true,
-    message: "Customer updated successfully",
-    data: customerData,
+    message: "Client mis à jour avec succès",
+    data: responseData,
   });
 });
 
@@ -302,7 +453,7 @@ exports.deleteCustomer = asyncHandler(async (req, res, next) => {
   const customer = await Customer.findByPk(req.params.id);
 
   if (!customer) {
-    return next(new ErrorResponse("Customer not found", 404));
+    return next(new ErrorResponse("Client non trouvé", 404));
   }
 
   // Check if customer has active bookings
@@ -317,18 +468,17 @@ exports.deleteCustomer = asyncHandler(async (req, res, next) => {
   if (activeBookings > 0) {
     return next(
       new ErrorResponse(
-        "Cannot delete customer with active bookings. Please complete or cancel all bookings first.",
+        "Impossible de supprimer un client avec des réservations actives. Veuillez d'abord terminer ou annuler toutes les réservations.",
         400
       )
     );
   }
 
-  // FIXED: No need to delete image files since they're stored in database
   await customer.destroy();
 
   res.status(200).json({
     success: true,
-    message: "Customer deleted successfully",
+    message: "Client supprimé avec succès",
     data: {},
   });
 });
@@ -340,42 +490,47 @@ exports.updateCustomerStatus = asyncHandler(async (req, res, next) => {
   const { status } = req.body;
 
   if (!["active", "inactive", "blocked"].includes(status)) {
-    return next(new ErrorResponse("Invalid status", 400));
+    return next(new ErrorResponse("Statut invalide", 400));
   }
 
   const customer = await Customer.findByPk(req.params.id);
 
   if (!customer) {
-    return next(new ErrorResponse("Customer not found", 404));
+    return next(new ErrorResponse("Client non trouvé", 404));
   }
 
   await customer.update({ status });
 
   // Transform for response
-  const customerData = transformCustomerForResponse(customer);
+  const responseData = transformCustomerForResponse(customer);
 
   res.status(200).json({
     success: true,
-    message: `Customer status updated to ${status}`,
-    data: customerData,
+    message: `Statut du client mis à jour vers ${status}`,
+    data: responseData,
   });
 });
 
-// @desc    Upload customer driver license
+// UPDATED: Upload customer driver license (legacy endpoint)
 // @route   PUT /api/customers/:id/driver-license
 // @access  Private (admin)
 exports.uploadDriverLicense = asyncHandler(async (req, res, next) => {
   const customer = await Customer.findByPk(req.params.id);
 
   if (!customer) {
-    return next(new ErrorResponse("Customer not found", 404));
+    return next(new ErrorResponse("Client non trouvé", 404));
   }
 
   if (!req.file) {
-    return next(new ErrorResponse("Please upload a driver license image", 400));
+    return next(
+      new ErrorResponse(
+        "Veuillez télécharger une image du permis de conduire",
+        400
+      )
+    );
   }
 
-  // FIXED: Store driver license image as BYTEA
+  // Store driver license image as BYTEA
   await customer.update({
     driverLicenseImageData: req.file.buffer,
     driverLicenseImageMimetype: req.file.mimetype,
@@ -383,16 +538,142 @@ exports.uploadDriverLicense = asyncHandler(async (req, res, next) => {
   });
 
   // Transform for response
-  const customerData = transformCustomerForResponse(customer);
+  const responseData = transformCustomerForResponse(customer);
 
   res.status(200).json({
     success: true,
-    message: "Driver license uploaded successfully",
-    data: customerData,
+    message: "Permis de conduire téléchargé avec succès",
+    data: responseData,
   });
 });
 
-// @desc    Get customer statistics
+// NEW: Upload customer passport
+// @route   PUT /api/customers/:id/passport
+// @access  Private (admin)
+exports.uploadPassport = asyncHandler(async (req, res, next) => {
+  const customer = await Customer.findByPk(req.params.id);
+
+  if (!customer) {
+    return next(new ErrorResponse("Client non trouvé", 404));
+  }
+
+  if (!req.file) {
+    return next(
+      new ErrorResponse("Veuillez télécharger une image du passeport", 400)
+    );
+  }
+
+  // Store passport image as BYTEA
+  await customer.update({
+    passportImageData: req.file.buffer,
+    passportImageMimetype: req.file.mimetype,
+    passportImageName: req.file.originalname,
+  });
+
+  // Transform for response
+  const responseData = transformCustomerForResponse(customer);
+
+  res.status(200).json({
+    success: true,
+    message: "Passeport téléchargé avec succès",
+    data: responseData,
+  });
+});
+
+// NEW: Upload customer CIN
+// @route   PUT /api/customers/:id/cin
+// @access  Private (admin)
+exports.uploadCin = asyncHandler(async (req, res, next) => {
+  const customer = await Customer.findByPk(req.params.id);
+
+  if (!customer) {
+    return next(new ErrorResponse("Client non trouvé", 404));
+  }
+
+  if (!req.file) {
+    return next(
+      new ErrorResponse("Veuillez télécharger une image de la CIN", 400)
+    );
+  }
+
+  // Store CIN image as BYTEA
+  await customer.update({
+    cinImageData: req.file.buffer,
+    cinImageMimetype: req.file.mimetype,
+    cinImageName: req.file.originalname,
+  });
+
+  // Transform for response
+  const responseData = transformCustomerForResponse(customer);
+
+  res.status(200).json({
+    success: true,
+    message: "CIN téléchargée avec succès",
+    data: responseData,
+  });
+});
+
+// NEW: Upload multiple customer documents at once
+// @route   PUT /api/customers/:id/documents
+// @access  Private (admin)
+exports.uploadCustomerDocuments = asyncHandler(async (req, res, next) => {
+  const customer = await Customer.findByPk(req.params.id);
+
+  if (!customer) {
+    return next(new ErrorResponse("Client non trouvé", 404));
+  }
+
+  if (!req.files || Object.keys(req.files).length === 0) {
+    return next(
+      new ErrorResponse("Veuillez télécharger au moins un document", 400)
+    );
+  }
+
+  let updateData = {};
+  let uploadedDocuments = [];
+
+  // Process driver license
+  if (req.files.driverLicenseImage && req.files.driverLicenseImage[0]) {
+    const file = req.files.driverLicenseImage[0];
+    updateData.driverLicenseImageData = file.buffer;
+    updateData.driverLicenseImageMimetype = file.mimetype;
+    updateData.driverLicenseImageName = file.originalname;
+    uploadedDocuments.push("permis de conduire");
+  }
+
+  // Process passport
+  if (req.files.passportImage && req.files.passportImage[0]) {
+    const file = req.files.passportImage[0];
+    updateData.passportImageData = file.buffer;
+    updateData.passportImageMimetype = file.mimetype;
+    updateData.passportImageName = file.originalname;
+    uploadedDocuments.push("passeport");
+  }
+
+  // Process CIN
+  if (req.files.cinImage && req.files.cinImage[0]) {
+    const file = req.files.cinImage[0];
+    updateData.cinImageData = file.buffer;
+    updateData.cinImageMimetype = file.mimetype;
+    updateData.cinImageName = file.originalname;
+    uploadedDocuments.push("CIN");
+  }
+
+  await customer.update(updateData);
+
+  // Transform for response
+  const responseData = transformCustomerForResponse(customer);
+
+  res.status(200).json({
+    success: true,
+    message: `Documents téléchargés avec succès: ${uploadedDocuments.join(
+      ", "
+    )}`,
+    data: responseData,
+  });
+});
+
+// UPDATED: Get customer statistics with document completion metrics
 // @route   GET /api/customers/stats
 // @access  Private (admin)
 exports.getCustomerStats = asyncHandler(async (req, res, next) => {
@@ -450,12 +731,49 @@ exports.getCustomerStats = asyncHandler(async (req, res, next) => {
     raw: true,
   });
 
+  // NEW: Get document completion statistics
+  const documentStats = {
+    customersWithDriverLicense: parseInt(stats.customersWithDriverLicense) || 0,
+    customersWithPassport: parseInt(stats.customersWithPassport) || 0,
+    customersWithCin: parseInt(stats.customersWithCin) || 0,
+    totalCustomers: parseInt(stats.totalCustomers) || 0,
+  };
+
+  // Calculate completion percentages
+  const documentCompletion = {
+    driverLicenseCompletion:
+      documentStats.totalCustomers > 0
+        ? Math.round(
+            (documentStats.customersWithDriverLicense /
+              documentStats.totalCustomers) *
+              100
+          )
+        : 0,
+    passportCompletion:
+      documentStats.totalCustomers > 0
+        ? Math.round(
+            (documentStats.customersWithPassport /
+              documentStats.totalCustomers) *
+              100
+          )
+        : 0,
+    cinCompletion:
+      documentStats.totalCustomers > 0
+        ? Math.round(
+            (documentStats.customersWithCin / documentStats.totalCustomers) *
+              100
+          )
+        : 0,
+  };
+
   res.status(200).json({
     success: true,
     data: {
       overview: stats,
       registrationTrends,
       tierDistribution,
+      documentStats,
+      documentCompletion,
     },
   });
 });
@@ -468,7 +786,7 @@ exports.searchCustomers = asyncHandler(async (req, res, next) => {
 
   if (!q || q.trim().length < 2) {
     return next(
-      new ErrorResponse("Search query must be at least 2 characters", 400)
+      new ErrorResponse("La recherche doit contenir au moins 2 caractères", 400)
     );
   }
 

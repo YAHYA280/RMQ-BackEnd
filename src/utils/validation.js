@@ -1,4 +1,4 @@
-// src/utils/validation.js - Updated with new WhatsApp validation
+// src/utils/validation.js - UPDATED: Added validation for new customer fields
 const { body, param, query } = require("express-validator");
 
 // Admin registration validation
@@ -281,143 +281,229 @@ exports.validateVehicleUpdate = [
     .isISO8601()
     .withMessage("Please enter a valid date for last oil change"),
 ];
-// Customer validation
+
+// UPDATED: Customer validation with new fields
 exports.validateCustomer = [
+  // Basic required fields
   body("firstName")
     .trim()
     .notEmpty()
-    .withMessage("First name is required")
+    .withMessage("Prénom est requis")
     .isLength({ min: 2, max: 50 })
-    .withMessage("First name must be between 2 and 50 characters"),
+    .withMessage("Le prénom doit contenir entre 2 et 50 caractères"),
 
   body("lastName")
     .trim()
     .notEmpty()
-    .withMessage("Last name is required")
+    .withMessage("Nom est requis")
     .isLength({ min: 2, max: 50 })
-    .withMessage("Last name must be between 2 and 50 characters"),
+    .withMessage("Le nom doit contenir entre 2 et 50 caractères"),
 
-  // FIXED: Email is now optional
+  // Email is optional
   body("email")
     .optional({ nullable: true, checkFalsy: true })
     .isEmail()
-    .withMessage("Please enter a valid email")
+    .withMessage("Veuillez saisir un email valide")
     .normalizeEmail(),
 
-  // FIXED: Phone validation with proper Moroccan format
+  // Phone validation with proper Moroccan format
   body("phone")
     .matches(/^0[67]\d{8}$/)
     .withMessage(
-      "Please enter a valid Moroccan phone number (06XXXXXXXX or 07XXXXXXXX)"
+      "Veuillez saisir un numéro de téléphone marocain valide (06XXXXXXXX ou 07XXXXXXXX)"
     ),
 
+  // NEW: Date of birth validation
   body("dateOfBirth")
     .optional()
     .isISO8601()
-    .withMessage("Please enter a valid date of birth"),
+    .withMessage("Veuillez saisir une date de naissance valide")
+    .custom((value) => {
+      if (value) {
+        const birthDate = new Date(value);
+        const today = new Date();
+        const age = today.getFullYear() - birthDate.getFullYear();
 
+        if (age < 18) {
+          throw new Error("Le client doit avoir au moins 18 ans");
+        }
+        if (age > 100) {
+          throw new Error("Date de naissance invalide");
+        }
+      }
+      return true;
+    }),
+
+  // NEW: Address validation (increased length)
   body("address")
     .optional()
     .trim()
-    .isLength({ max: 200 })
-    .withMessage("Address cannot be more than 200 characters"),
+    .isLength({ max: 500 })
+    .withMessage("L'adresse ne peut pas dépasser 500 caractères"),
 
   body("city")
     .optional()
     .trim()
     .isLength({ max: 50 })
-    .withMessage("City cannot be more than 50 characters"),
+    .withMessage("La ville ne peut pas dépasser 50 caractères"),
 
   body("postalCode")
     .optional()
     .trim()
     .isLength({ max: 10 })
-    .withMessage("Postal code cannot be more than 10 characters"),
+    .withMessage("Le code postal ne peut pas dépasser 10 caractères"),
 
+  // NEW: Driver license number validation
   body("driverLicenseNumber")
     .optional()
     .trim()
     .isLength({ max: 20 })
-    .withMessage("Driver license number cannot be more than 20 characters"),
+    .withMessage(
+      "Le numéro de permis de conduire ne peut pas dépasser 20 caractères"
+    ),
+
+  // NEW: Passport number validation
+  body("passportNumber")
+    .optional()
+    .trim()
+    .isLength({ max: 20 })
+    .withMessage("Le numéro de passeport ne peut pas dépasser 20 caractères"),
+
+  // NEW: Passport issued at validation
+  body("passportIssuedAt")
+    .optional()
+    .trim()
+    .isLength({ max: 100 })
+    .withMessage(
+      "Le lieu de délivrance du passeport ne peut pas dépasser 100 caractères"
+    ),
+
+  // NEW: CIN number validation
+  body("cinNumber")
+    .optional()
+    .trim()
+    .isLength({ max: 20 })
+    .withMessage("Le numéro CIN ne peut pas dépasser 20 caractères"),
 
   body("notes")
     .optional()
     .trim()
     .isLength({ max: 500 })
-    .withMessage("Notes cannot be more than 500 characters"),
+    .withMessage("Les notes ne peuvent pas dépasser 500 caractères"),
 ];
-// Customer update validation
+
+// UPDATED: Customer update validation with new fields
 exports.validateCustomerUpdate = [
   body("firstName")
     .optional()
     .trim()
     .notEmpty()
-    .withMessage("First name cannot be empty")
+    .withMessage("Le prénom ne peut pas être vide")
     .isLength({ min: 2, max: 50 })
-    .withMessage("First name must be between 2 and 50 characters"),
+    .withMessage("Le prénom doit contenir entre 2 et 50 caractères"),
 
   body("lastName")
     .optional()
     .trim()
     .notEmpty()
-    .withMessage("Last name cannot be empty")
+    .withMessage("Le nom ne peut pas être vide")
     .isLength({ min: 2, max: 50 })
-    .withMessage("Last name must be between 2 and 50 characters"),
+    .withMessage("Le nom doit contenir entre 2 et 50 caractères"),
 
-  // FIXED: Email is optional for updates too
+  // Email is optional for updates too
   body("email")
     .optional({ nullable: true, checkFalsy: true })
     .isEmail()
-    .withMessage("Please enter a valid email")
+    .withMessage("Veuillez saisir un email valide")
     .normalizeEmail(),
 
-  // FIXED: Phone validation with proper Moroccan format
+  // Phone validation with proper Moroccan format
   body("phone")
     .optional()
     .matches(/^0[67]\d{8}$/)
     .withMessage(
-      "Please enter a valid Moroccan phone number (06XXXXXXXX or 07XXXXXXXX)"
+      "Veuillez saisir un numéro de téléphone marocain valide (06XXXXXXXX ou 07XXXXXXXX)"
     ),
 
+  // NEW: Date of birth validation for updates
   body("dateOfBirth")
     .optional()
     .isISO8601()
-    .withMessage("Please enter a valid date of birth"),
+    .withMessage("Veuillez saisir une date de naissance valide")
+    .custom((value) => {
+      if (value) {
+        const birthDate = new Date(value);
+        const today = new Date();
+        const age = today.getFullYear() - birthDate.getFullYear();
 
+        if (age < 18) {
+          throw new Error("Le client doit avoir au moins 18 ans");
+        }
+        if (age > 100) {
+          throw new Error("Date de naissance invalide");
+        }
+      }
+      return true;
+    }),
+
+  // NEW: Address validation for updates
   body("address")
     .optional()
     .trim()
-    .isLength({ max: 200 })
-    .withMessage("Address cannot be more than 200 characters"),
+    .isLength({ max: 500 })
+    .withMessage("L'adresse ne peut pas dépasser 500 caractères"),
 
   body("city")
     .optional()
     .trim()
     .isLength({ max: 50 })
-    .withMessage("City cannot be more than 50 characters"),
+    .withMessage("La ville ne peut pas dépasser 50 caractères"),
 
   body("postalCode")
     .optional()
     .trim()
     .isLength({ max: 10 })
-    .withMessage("Postal code cannot be more than 10 characters"),
+    .withMessage("Le code postal ne peut pas dépasser 10 caractères"),
 
+  // NEW: Document number validations for updates
   body("driverLicenseNumber")
     .optional()
     .trim()
     .isLength({ max: 20 })
-    .withMessage("Driver license number cannot be more than 20 characters"),
+    .withMessage(
+      "Le numéro de permis de conduire ne peut pas dépasser 20 caractères"
+    ),
+
+  body("passportNumber")
+    .optional()
+    .trim()
+    .isLength({ max: 20 })
+    .withMessage("Le numéro de passeport ne peut pas dépasser 20 caractères"),
+
+  body("passportIssuedAt")
+    .optional()
+    .trim()
+    .isLength({ max: 100 })
+    .withMessage(
+      "Le lieu de délivrance du passeport ne peut pas dépasser 100 caractères"
+    ),
+
+  body("cinNumber")
+    .optional()
+    .trim()
+    .isLength({ max: 20 })
+    .withMessage("Le numéro CIN ne peut pas dépasser 20 caractères"),
 
   body("status")
     .optional()
     .isIn(["active", "inactive", "blocked"])
-    .withMessage("Status must be active, inactive, or blocked"),
+    .withMessage("Le statut doit être actif, inactif ou bloqué"),
 
   body("notes")
     .optional()
     .trim()
     .isLength({ max: 500 })
-    .withMessage("Notes cannot be more than 500 characters"),
+    .withMessage("Les notes ne peuvent pas dépasser 500 caractères"),
 ];
 
 // Booking validation
@@ -561,148 +647,33 @@ exports.validatePagination = [
     .withMessage("Limit must be between 1 and 100"),
 ];
 
+// Website booking validation with new customer fields
 exports.validateWebsiteBooking = [
   // Customer information
   body("firstName")
     .trim()
     .notEmpty()
-    .withMessage("First name is required")
+    .withMessage("Prénom est requis")
     .isLength({ min: 2, max: 50 })
-    .withMessage("First name must be between 2 and 50 characters"),
+    .withMessage("Le prénom doit contenir entre 2 et 50 caractères"),
 
   body("lastName")
     .trim()
     .notEmpty()
-    .withMessage("Last name is required")
+    .withMessage("Nom est requis")
     .isLength({ min: 2, max: 50 })
-    .withMessage("Last name must be between 2 and 50 characters"),
+    .withMessage("Le nom doit contenir entre 2 et 50 caractères"),
 
   body("phone")
     .matches(/^0[67]\d{8}$/)
     .withMessage(
-      "Please enter a valid Moroccan phone number (06XXXXXXXX or 07XXXXXXXX)"
+      "Veuillez saisir un numéro de téléphone marocain valide (06XXXXXXXX ou 07XXXXXXXX)"
     ),
 
   body("email")
     .optional({ nullable: true, checkFalsy: true })
     .isEmail()
-    .withMessage("Please enter a valid email")
-    .normalizeEmail(),
-
-  // Vehicle and booking details
-  body("vehicleId")
-    .notEmpty()
-    .withMessage("Vehicle ID is required")
-    .isUUID()
-    .withMessage("Invalid vehicle ID format"),
-
-  body("pickupDate")
-    .isISO8601()
-    .withMessage("Please enter a valid pickup date")
-    .custom((value) => {
-      if (new Date(value) < new Date()) {
-        throw new Error("Pickup date cannot be in the past");
-      }
-      return true;
-    }),
-
-  body("returnDate")
-    .isISO8601()
-    .withMessage("Please enter a valid return date")
-    .custom((value, { req }) => {
-      if (new Date(value) <= new Date(req.body.pickupDate)) {
-        throw new Error("Return date must be after pickup date");
-      }
-      return true;
-    }),
-
-  body("pickupTime")
-    .matches(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/)
-    .withMessage("Please enter a valid pickup time (HH:MM format)"),
-
-  body("returnTime")
-    .matches(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/)
-    .withMessage("Please enter a valid return time (HH:MM format)"),
-
-  body("pickupLocation")
-    .trim()
-    .notEmpty()
-    .withMessage("Pickup location is required")
-    .isLength({ max: 200 })
-    .withMessage("Pickup location cannot exceed 200 characters"),
-
-  body("returnLocation")
-    .trim()
-    .notEmpty()
-    .withMessage("Return location is required")
-    .isLength({ max: 200 })
-    .withMessage("Return location cannot exceed 200 characters"),
-];
-exports.validateAdminBooking = [
-  body("customerId")
-    .notEmpty()
-    .withMessage("Customer ID is required")
-    .isUUID()
-    .withMessage("Invalid customer ID format"),
-
-  body("vehicleId")
-    .notEmpty()
-    .withMessage("Vehicle ID is required")
-    .isUUID()
-    .withMessage("Invalid vehicle ID format"),
-
-  body("pickupDate")
-    .isISO8601()
-    .withMessage("Please enter a valid pickup date"),
-
-  body("returnDate")
-    .isISO8601()
-    .withMessage("Please enter a valid return date"),
-
-  body("pickupTime")
-    .matches(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/)
-    .withMessage("Please enter a valid pickup time (HH:MM format)"),
-
-  body("returnTime")
-    .matches(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/)
-    .withMessage("Please enter a valid return time (HH:MM format)"),
-
-  body("pickupLocation")
-    .trim()
-    .notEmpty()
-    .withMessage("Pickup location is required"),
-
-  body("returnLocation")
-    .trim()
-    .notEmpty()
-    .withMessage("Return location is required"),
-];
-exports.validateWebsiteBooking = [
-  // Customer information (for auto-creation)
-  body("firstName")
-    .trim()
-    .notEmpty()
-    .withMessage("First name is required")
-    .isLength({ min: 2, max: 50 })
-    .withMessage("First name must be between 2 and 50 characters"),
-
-  body("lastName")
-    .trim()
-    .notEmpty()
-    .withMessage("Last name is required")
-    .isLength({ min: 2, max: 50 })
-    .withMessage("Last name must be between 2 and 50 characters"),
-
-  body("phone")
-    .matches(/^0[67]\d{8}$/)
-    .withMessage(
-      "Please enter a valid Moroccan phone number (06XXXXXXXX or 07XXXXXXXX)"
-    ),
-
-  body("email")
-    .optional({ nullable: true, checkFalsy: true })
-    .isEmail()
-    .withMessage("Please enter a valid email")
+    .withMessage("Veuillez saisir un email valide")
     .normalizeEmail(),
 
   // Vehicle and booking details
@@ -767,4 +738,45 @@ exports.validateWebsiteBooking = [
       "Custom Location",
     ])
     .withMessage("Please select a valid return location"),
+];
+
+// Admin booking validation
+exports.validateAdminBooking = [
+  body("customerId")
+    .notEmpty()
+    .withMessage("Customer ID is required")
+    .isUUID()
+    .withMessage("Invalid customer ID format"),
+
+  body("vehicleId")
+    .notEmpty()
+    .withMessage("Vehicle ID is required")
+    .isUUID()
+    .withMessage("Invalid vehicle ID format"),
+
+  body("pickupDate")
+    .isISO8601()
+    .withMessage("Please enter a valid pickup date"),
+
+  body("returnDate")
+    .isISO8601()
+    .withMessage("Please enter a valid return date"),
+
+  body("pickupTime")
+    .matches(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/)
+    .withMessage("Please enter a valid pickup time (HH:MM format)"),
+
+  body("returnTime")
+    .matches(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/)
+    .withMessage("Please enter a valid return time (HH:MM format)"),
+
+  body("pickupLocation")
+    .trim()
+    .notEmpty()
+    .withMessage("Pickup location is required"),
+
+  body("returnLocation")
+    .trim()
+    .notEmpty()
+    .withMessage("Return location is required"),
 ];
