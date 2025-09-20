@@ -1,50 +1,57 @@
-// src/services/contractGenerator.js - Enhanced PDF Contract Generation Service
+// src/services/contractGenerator.js - Using Precise Coordinates from Photoshop
 const PDFDocument = require("pdfkit");
+const fs = require("fs");
+const path = require("path");
 
 class ContractGenerator {
   constructor() {
-    this.companyInfo = {
-      name: "MELHOR QUE NADA CARS",
-      slogan: "Longue & Courte Durée",
-      address: "LOCAL 60 RUE 8 ENNASR LOT 635, Tanger - Maroc",
-      capital: "100.000.00 dh",
-      rc: "003389593000004",
-      phone: "06.00.28.08.03 / 07.04.32.87.33",
-      email: "melhorquenada@gmail.com",
-    };
+    this.templatePath = path.join(__dirname, "../assets/contract-template.jpg");
+    // Exact template dimensions you provided
+    this.imageWidth = 1414; // Template width in pixels
+    this.imageHeight = 2000; // Template height in pixels
   }
 
   async generateContract(bookingData) {
     return new Promise((resolve, reject) => {
       try {
+        console.log(
+          "Generating contract with precise coordinates for:",
+          bookingData.bookingNumber
+        );
+
+        if (!this.validateBookingData(bookingData)) {
+          throw new Error("Invalid booking data provided");
+        }
+
+        // Check if template image exists
+        if (!fs.existsSync(this.templatePath)) {
+          throw new Error(`Template image not found at: ${this.templatePath}`);
+        }
+
         const doc = new PDFDocument({
-          margin: 40,
           size: "A4",
+          margin: 0,
           info: {
             Title: `Contract ${bookingData.bookingNumber}`,
-            Author: this.companyInfo.name,
+            Author: "MELHOR QUE NADA CARS",
             Subject: "Car Rental Contract",
-            Creator: this.companyInfo.name,
-            Producer: this.companyInfo.name,
             CreationDate: new Date(),
           },
         });
 
         const chunks = [];
-
         doc.on("data", (chunk) => chunks.push(chunk));
         doc.on("end", () => resolve(Buffer.concat(chunks)));
         doc.on("error", (err) => reject(err));
 
-        // Generate contract content
-        this.addHeader(doc);
-        this.addContractNumber(doc, bookingData.bookingNumber);
-        this.addDocumentChecklist(doc);
-        this.addParticipantsInfo(doc, bookingData);
-        this.addRentalDetails(doc, bookingData);
-        this.addConditions(doc);
-        this.addSignatures(doc);
-        this.addFooter(doc);
+        // Add the background template image
+        doc.image(this.templatePath, 0, 0, {
+          width: doc.page.width,
+          height: doc.page.height,
+        });
+
+        // Overlay the data using your precise coordinates
+        this.overlayDataWithCoordinates(doc, bookingData);
 
         doc.end();
       } catch (error) {
@@ -54,390 +61,156 @@ class ContractGenerator {
     });
   }
 
-  addHeader(doc) {
-    // Company header with styling
-    doc
-      .fontSize(22)
-      .fillColor("#1e3a8a")
-      .font("Helvetica-Bold")
-      .text(this.companyInfo.name, { align: "center" });
-
-    doc
-      .fontSize(14)
-      .fillColor("#374151")
-      .font("Helvetica")
-      .text(this.companyInfo.slogan, { align: "center" });
-
-    doc.moveDown(0.5);
-
-    // Contract title with border
-    const titleY = doc.y;
-    doc
-      .rect(40, titleY - 10, doc.page.width - 80, 45)
-      .fillAndStroke("#f3f4f6", "#d1d5db");
-
-    doc
-      .fillColor("#1f2937")
-      .fontSize(20)
-      .font("Helvetica-Bold")
-      .text("CONTRAT DE LOCATION", titleY + 8, { align: "center" });
-
-    doc.moveDown(2);
+  validateBookingData(bookingData) {
+    return (
+      bookingData &&
+      bookingData.customer &&
+      bookingData.vehicle &&
+      bookingData.bookingNumber
+    );
   }
 
-  addContractNumber(doc, contractNumber) {
-    const contractY = doc.y;
-
-    // Contract number box
-    doc
-      .rect(doc.page.width - 160, contractY, 130, 30)
-      .fillAndStroke("#dc2626", "#b91c1c");
-
-    doc
-      .fillColor("white")
-      .fontSize(14)
-      .font("Helvetica-Bold")
-      .text(`N° ${contractNumber}`, doc.page.width - 145, contractY + 10);
-
-    doc.fillColor("black");
-    doc.moveDown(1.5);
+  // Convert Photoshop Y coordinate to PDF Y coordinate
+  convertY(photoshopY) {
+    return this.imageHeight - photoshopY;
   }
 
-  addDocumentChecklist(doc) {
-    doc
-      .fontSize(12)
-      .fillColor("#1f2937")
-      .font("Helvetica-Bold")
-      .text("Documents de Véhicule", { underline: true });
+  // Scale coordinates from image pixels to PDF points
+  scaleCoordinate(imageCoord, imageDimension, pdfDimension) {
+    return (imageCoord * pdfDimension) / imageDimension;
+  }
 
-    const documents = [
-      "Carte Grise",
-      "Assurance",
-      "Vignette",
-      "Visite Technique",
-      "Autorisation",
-      "Contrat",
-    ];
+  overlayDataWithCoordinates(doc, bookingData) {
+    // Set default text properties with better font and larger size
+    doc.fillColor("#000000");
+    doc.fontSize(12); // Reduced from 35 to better fit the fields
+    doc.font("Helvetica-Bold"); // Using bold Helvetica for better clarity
 
-    let x = 60;
-    const y = doc.y + 10;
+    // Calculate scaling factors based on A4 PDF size
+    const pdfWidth = doc.page.width; // ~595 points for A4
+    const pdfHeight = doc.page.height; // ~842 points for A4
 
-    documents.forEach((docName, index) => {
-      if (index % 3 === 0 && index > 0) {
-        doc.y += 25;
-        x = 60;
+    // Scale factors to convert your image coordinates to PDF coordinates
+    const scaleX = pdfWidth / this.imageWidth; // Convert image X to PDF X
+    const scaleY = pdfHeight / this.imageHeight; // Convert image Y to PDF Y
+
+    // Helper function to place text at scaled coordinates
+    const placeText = (text, x, y, fontSize = 12, maxWidth = null) => {
+      if (!text) return;
+
+      // Convert image coordinates to PDF coordinates
+      const pdfX = x * scaleX;
+      const pdfY = pdfHeight - y * scaleY; // Flip Y coordinate (image top-left to PDF bottom-left)
+
+      doc.fontSize(fontSize);
+      doc.font("Helvetica-Bold");
+
+      if (maxWidth) {
+        const scaledWidth = maxWidth * scaleX;
+        doc.text(text, pdfX, pdfY, { width: scaledWidth, ellipsis: true });
+      } else {
+        doc.text(text, pdfX, pdfY);
       }
 
-      // Checkbox
-      doc.rect(x, doc.y, 12, 12).stroke("#6b7280");
-      doc
-        .fontSize(10)
-        .font("Helvetica")
-        .fillColor("#374151")
-        .text(docName, x + 18, doc.y + 3);
-      x += 120;
-    });
-
-    doc.moveDown(2);
-  }
-
-  addParticipantsInfo(doc, bookingData) {
-    const startY = doc.y;
-
-    // Left column - Renter info
-    this.addRenterSection(doc, bookingData.customer, startY);
-
-    // Right column - Vehicle info
-    this.addVehicleSection(doc, bookingData.vehicle, bookingData, startY);
-
-    // Move past both columns
-    doc.y = Math.max(doc.y, startY + 280);
-    doc.moveDown(1);
-  }
-
-  addRenterSection(doc, customer, startY) {
-    // Renter section header
-    doc.rect(40, startY, 260, 30).fillAndStroke("#4f46e5", "#3730a3");
-
-    doc
-      .fillColor("white")
-      .fontSize(14)
-      .font("Helvetica-Bold")
-      .text("LOCATAIRE", 50, startY + 10);
-
-    doc.fillColor("black").fontSize(10).font("Helvetica");
-
-    const fields = [
-      {
-        label: "Nom et Prénom",
-        value: `${customer.firstName} ${customer.lastName}`,
-        arabic: "الإسم واللقب",
-      },
-      {
-        label: "Nationalité",
-        value: customer.country || "Marocaine",
-        arabic: "الجنسية",
-      },
-      {
-        label: "Date de Naissance",
-        value: customer.dateOfBirth
-          ? new Date(customer.dateOfBirth).toLocaleDateString("fr-FR")
-          : "___________",
-        arabic: "تاريخ الازدياد",
-      },
-      {
-        label: "Adresse au Maroc",
-        value: customer.address || "___________________________",
-        arabic: "عنوان المغرب",
-      },
-      {
-        label: "Permis de conduite N°",
-        value: customer.driverLicenseNumber || "_______________",
-        arabic: "رقم رخصة السياقة",
-      },
-      {
-        label: "GSM",
-        value: customer.phone,
-        arabic: "الهاتف النقال",
-      },
-    ];
-
-    doc.y = startY + 45;
-
-    fields.forEach((field) => {
-      const lineY = doc.y;
-
-      // French label
-      doc.font("Helvetica").text(`${field.label} :`, 50, lineY, { width: 120 });
-
-      // Arabic label
-      doc.font("Helvetica").text(field.arabic, 170, lineY, { width: 80 });
-
-      // Value with underline
-      doc
-        .font("Helvetica")
-        .text(field.value, 50, lineY + 12, { width: 240, underline: true });
-
-      doc.moveDown(1.2);
-    });
-  }
-
-  addVehicleSection(doc, vehicle, bookingData, startY) {
-    // Vehicle info box (right side)
-    doc.rect(320, startY, 250, 280).stroke("#d1d5db");
-
-    // Vehicle section header
-    doc.rect(320, startY, 250, 30).fillAndStroke("#059669", "#047857");
-
-    doc
-      .fillColor("white")
-      .fontSize(14)
-      .font("Helvetica-Bold")
-      .text("VÉHICULE & LOCATION", 330, startY + 10);
-
-    const pickupDate = new Date(bookingData.pickupDate).toLocaleDateString(
-      "fr-FR"
-    );
-    const returnDate = new Date(bookingData.returnDate).toLocaleDateString(
-      "fr-FR"
-    );
-
-    const vehicleFields = [
-      {
-        label: "Marque/Modèle",
-        value: `${vehicle.brand} ${vehicle.name}`,
-        arabic: "ماركة السيارة",
-      },
-      { label: "Année", value: vehicle.year.toString(), arabic: "السنة" },
-      {
-        label: "Immatriculation",
-        value: vehicle.licensePlate,
-        arabic: "رقم اللوحة",
-      },
-      { label: "Date de Départ", value: pickupDate, arabic: "تاريخ المغادرة" },
-      {
-        label: "Heure de Départ",
-        value: bookingData.pickupTime,
-        arabic: "ساعة المغادرة",
-      },
-      { label: "Date de Retour", value: returnDate, arabic: "تاريخ العودة" },
-      {
-        label: "Heure de Retour",
-        value: bookingData.returnTime,
-        arabic: "ساعة العودة",
-      },
-      {
-        label: "Nombre de jours",
-        value: bookingData.totalDays.toString(),
-        arabic: "عدد أيام",
-      },
-      { label: "Prix/jour", value: `${vehicle.price} DH`, arabic: "السعر/يوم" },
-      {
-        label: "Montant Total",
-        value: `${bookingData.totalAmount} DH`,
-        arabic: "المبلغ الإجمالي",
-      },
-      {
-        label: "Kilométrage",
-        value: vehicle.mileage ? vehicle.mileage.toString() : "0",
-        arabic: "الكيلومترات",
-      },
-    ];
-
-    doc.fontSize(9).fillColor("black");
-
-    let fieldY = startY + 45;
-
-    vehicleFields.forEach((field) => {
-      // French label
-      doc
-        .font("Helvetica-Bold")
-        .fillColor("#374151")
-        .text(field.label, 325, fieldY, { width: 100 });
-
-      // Value
-      doc
-        .font("Helvetica")
-        .fillColor("black")
-        .text(field.value, 430, fieldY, { width: 135 });
-
-      fieldY += 22;
-    });
-  }
-
-  addRentalDetails(doc, bookingData) {
-    doc.addPage();
-
-    // Rental terms header
-    doc
-      .fontSize(16)
-      .fillColor("#1f2937")
-      .font("Helvetica-Bold")
-      .text("DÉTAILS DE LA LOCATION", { align: "center", underline: true });
-
-    doc.moveDown(1);
-
-    // Location details
-    doc.fontSize(11).fillColor("black").font("Helvetica");
-
-    const details = [
-      `Lieu de prise en charge: ${bookingData.pickupLocation}`,
-      `Lieu de retour: ${bookingData.returnLocation}`,
-      `Durée totale: ${bookingData.totalDays} jour(s)`,
-      `Tarif journalier: ${bookingData.dailyRate} DH`,
-      `Montant total: ${bookingData.totalAmount} DH`,
-    ];
-
-    details.forEach((detail) => {
-      doc.text(`• ${detail}`, { indent: 20, paragraphGap: 5 });
-    });
-
-    doc.moveDown(2);
-  }
-
-  addConditions(doc) {
-    doc
-      .fontSize(14)
-      .fillColor("#1f2937")
-      .font("Helvetica-Bold")
-      .text("CONDITIONS GÉNÉRALES DE LOCATION", {
-        align: "center",
-        underline: true,
-      });
-
-    doc.moveDown(1);
-
-    const conditions = [
-      "Le véhicule doit être rendu dans l'état où il a été reçu, propre et avec le même niveau de carburant.",
-      "Toute détérioration, dommage ou perte constatée sera facturée au locataire selon barème en vigueur.",
-      "Le locataire s'engage à respecter le code de la route marocain et les limitations de vitesse.",
-      "En cas d'accident, prévenir immédiatement la société de location et les autorités compétentes.",
-      "La caution sera restituée après vérification de l'état du véhicule et règlement des éventuels frais.",
-      "Il est strictement interdit de sous-louer le véhicule à une tierce personne.",
-      "Retard de restitution: 50 DH par heure de retard, au-delà de 6h = 1 journée supplémentaire.",
-      "Le carburant est à la charge du locataire. Le véhicule doit être rendu avec le même niveau.",
-      "Franchise d'assurance: 3000 DH en cas de sinistre responsable du locataire.",
-      "Le locataire déclare avoir pris connaissance et accepte toutes ces conditions.",
-    ];
-
-    doc.fontSize(10).fillColor("black").font("Helvetica");
-
-    conditions.forEach((condition, index) => {
-      doc.text(`${index + 1}. ${condition}`, {
-        paragraphGap: 8,
-        indent: 15,
-        width: doc.page.width - 80,
-      });
-    });
-
-    doc.moveDown(2);
-  }
-
-  addSignatures(doc) {
-    const signatureY = doc.y + 30;
-
-    // Ensure we don't run off the page
-    if (signatureY > doc.page.height - 150) {
-      doc.addPage();
-      const newSignatureY = 100;
-      this.drawSignatureBoxes(doc, newSignatureY);
-    } else {
-      this.drawSignatureBoxes(doc, signatureY);
-    }
-  }
-
-  drawSignatureBoxes(doc, signatureY) {
-    // Left signature box - Company
-    doc.rect(60, signatureY, 200, 100).stroke("#6b7280");
-
-    // Right signature box - Client
-    doc.rect(350, signatureY, 200, 100).stroke("#6b7280");
-
-    doc
-      .fontSize(12)
-      .font("Helvetica-Bold")
-      .fillColor("#1f2937")
-      .text("Signature Responsable", 70, signatureY - 20)
-      .text("Signature du Client", 360, signatureY - 20);
-
-    doc
-      .fontSize(10)
-      .font("Helvetica")
-      .fillColor("#6b7280")
-      .text(this.companyInfo.name, 70, signatureY + 10)
-      .text("Date et lieu:", 70, signatureY + 30)
-      .text("Date et lieu:", 360, signatureY + 30);
-
-    // Current date
-    const currentDate = new Date().toLocaleDateString("fr-FR");
-    doc.text(`Le ${currentDate} à Tanger`, 200, signatureY + 110, {
-      align: "center",
-    });
-  }
-
-  addFooter(doc) {
-    const footerY = doc.page.height - 60;
-
-    doc
-      .fontSize(8)
-      .fillColor("#6b7280")
-      .font("Helvetica")
-      .text(
-        `${this.companyInfo.name} Sarl au capital de ${this.companyInfo.capital}`,
-        40,
-        footerY,
-        { align: "center", width: doc.page.width - 80 }
-      )
-      .text(`${this.companyInfo.address}`, 40, footerY + 12, {
-        align: "center",
-        width: doc.page.width - 80,
-      })
-      .text(
-        `R.C. : ${this.companyInfo.rc} | GSM : ${this.companyInfo.phone} | E-mail : ${this.companyInfo.email}`,
-        40,
-        footerY + 24,
-        { align: "center", width: doc.page.width - 80 }
+      console.log(
+        `Placed "${text}" at PDF coordinates: (${pdfX.toFixed(
+          1
+        )}, ${pdfY.toFixed(1)})`
       );
+    };
+
+    // Contract Number (adjust position - it should be red and in top right)
+    doc.fillColor("#ff0000"); // Red color for contract number
+    placeText(bookingData.bookingNumber, 1150, 1900, 14);
+    doc.fillColor("#000000"); // Back to black for other text
+
+    // Customer Information Fields (converting from your image coordinates to PDF coordinates)
+
+    // Nom et Prénom: [350, 446] on 1414x2000 image
+    const customerName = `${bookingData.customer.firstName || ""} ${
+      bookingData.customer.lastName || ""
+    }`;
+    placeText(customerName, 350, 1565, 10);
+
+    // Nationalité: [310, 502]
+    placeText(bookingData.customer.country || "Marocaine", 310, 1506, 10);
+
+    // Date de Naissance: [412, 557]
+    if (bookingData.customer.dateOfBirth) {
+      const dob = new Date(bookingData.customer.dateOfBirth).toLocaleDateString(
+        "fr-FR"
+      );
+      placeText(dob, 412, 1410, 10);
+    }
+
+    // Passport N°: [310, 615]
+    placeText(
+      bookingData.customer.passportNumber || "passportNUmber",
+      310,
+      1395,
+      10
+    );
+
+    // Délivré à: [278, 671]
+    placeText(bookingData.customer.passportIssuedAt || "", 278, 671, 10);
+
+    // CIN: [300, 725]
+    placeText(bookingData.customer.cinNumber || "", 300, 725, 10);
+
+    // Permis de conduite N°: [420, 780]
+    placeText(bookingData.customer.driverLicenseNumber || "", 420, 780, 10);
+
+    // Adresse: [160, 940]
+    placeText(bookingData.customer.address || "", 160, 940, 10);
+
+    // Numéro de téléphone: [250, 1000]
+    placeText(bookingData.customer.phone || "", 250, 1000, 10);
+
+    // Vehicle Information Fields (adjusting to fit better in the right-side form fields)
+
+    // Marque de véhicule: adjusting to fit in the field better
+    const vehicleName = `${bookingData.vehicle.brand || ""} ${
+      bookingData.vehicle.name || ""
+    }`;
+    placeText(vehicleName, 1160, 1630, 9);
+
+    // Immatriculation: adjusting position
+    placeText(bookingData.vehicle.licensePlate || "", 1180, 1560, 9);
+
+    // Date de départ: adjusting position
+    if (bookingData.pickupDate) {
+      const pickupDate = new Date(bookingData.pickupDate).toLocaleDateString(
+        "fr-FR"
+      );
+      placeText(pickupDate, 1180, 1480, 9);
+    }
+
+    // Date de retour: adjusting position
+    if (bookingData.returnDate) {
+      const returnDate = new Date(bookingData.returnDate).toLocaleDateString(
+        "fr-FR"
+      );
+      placeText(returnDate, 1180, 1410, 9);
+    }
+
+    // Nombre de jours: adjusting position
+    placeText(bookingData.totalDays?.toString() || "0", 1200, 1340, 9);
+
+    // Heure de départ: adjusting position
+    placeText(bookingData.pickupTime || "", 1180, 1270, 9);
+
+    // Heure de retour: adjusting position
+    placeText(bookingData.returnTime || "", 1180, 1130, 9);
+
+    // Montant: positioning to fit in the Montant field
+    placeText(`${bookingData.totalAmount || 0} DH`, 1160, 1060, 9);
+
+    // // Kilométrage: positioning to fit in the Kilométrage field
+    // placeText(bookingData.vehicle.mileage?.toString() || "0", 1160, 1058, 9);
+
+    console.log(
+      "Contract data overlayed with corrected coordinates and scaling"
+    );
   }
 }
 

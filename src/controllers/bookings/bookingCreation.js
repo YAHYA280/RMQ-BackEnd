@@ -6,7 +6,9 @@ const asyncHandler = require("../../middleware/asyncHandler");
 const ErrorResponse = require("../../utils/errorResponse");
 
 // Import the helper function
-const { calculateRentalDaysWithTimeLogic } = require("../bookings");
+const {
+  calculateRentalDaysWithTimeLogic,
+} = require("../../utils/bookingUtils");
 
 // @desc    Create new booking from website
 // @route   POST /api/bookings/website

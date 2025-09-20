@@ -4,6 +4,7 @@ const { validationResult } = require("express-validator");
 const { Op } = require("sequelize");
 const asyncHandler = require("../middleware/asyncHandler");
 const ErrorResponse = require("../utils/errorResponse");
+const { calculateRentalDaysWithTimeLogic } = require("../utils/bookingUtils");
 
 // Import other parts
 const {
@@ -25,41 +26,6 @@ const {
   getCustomerBookings,
   getVehicleCalendar,
 } = require("./bookings/bookingUtilities");
-
-// Helper function for time calculation
-const calculateRentalDaysWithTimeLogic = (
-  pickupDate,
-  returnDate,
-  pickupTime,
-  returnTime
-) => {
-  // Calculate basic day difference
-  const pickupDateObj = new Date(pickupDate);
-  const returnDateObj = new Date(returnDate);
-  const basicDays = Math.ceil(
-    (returnDateObj.getTime() - pickupDateObj.getTime()) / (1000 * 60 * 60 * 24)
-  );
-
-  // Convert times to minutes for easier comparison
-  const [pickupHour, pickupMin] = pickupTime.split(":").map(Number);
-  const [returnHour, returnMin] = returnTime.split(":").map(Number);
-
-  const pickupMinutes = pickupHour * 60 + pickupMin;
-  const returnMinutes = returnHour * 60 + returnMin;
-
-  // Your logic: if return time is more than 1 hour after pickup time, add 1 day
-  const timeDifference = returnMinutes - pickupMinutes;
-  const oneHourInMinutes = 60;
-
-  let rentalDays = basicDays;
-
-  // If return time exceeds pickup time by more than 1 hour, add extra day
-  if (timeDifference > oneHourInMinutes) {
-    rentalDays += 1;
-  }
-
-  return Math.max(1, rentalDays);
-};
 
 // @desc    Get all bookings with filtering and pagination
 // @route   GET /api/bookings
