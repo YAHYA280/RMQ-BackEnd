@@ -119,14 +119,10 @@ class ContractGenerator {
       );
     };
 
-    // Contract Number (adjust position - it should be red and in top right)
     doc.fillColor("#ff0000"); // Red color for contract number
     placeText(bookingData.bookingNumber, 1150, 1900, 14);
     doc.fillColor("#000000"); // Back to black for other text
 
-    // Customer Information Fields (converting from your image coordinates to PDF coordinates)
-
-    // Nom et Prénom: [350, 446] on 1414x2000 image
     const customerName = `${bookingData.customer.firstName || ""} ${
       bookingData.customer.lastName || ""
     }`;
