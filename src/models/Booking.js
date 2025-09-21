@@ -1,4 +1,4 @@
-// src/models/Booking.js - Complete Updated Version with Time Logic
+// src/models/Booking.js - UPDATED: Fixed customer includes to match simplified Customer model
 const { DataTypes } = require("sequelize");
 const { sequelize } = require("../config/database");
 const {
@@ -214,7 +214,7 @@ const Booking = sequelize.define(
 
 // Instance methods
 
-// UPDATED: Calculate rental days with time logic
+// Calculate rental days with time logic
 Booking.prototype.calculateRentalDays = function () {
   if (
     !this.pickupDate ||
@@ -253,7 +253,7 @@ Booking.prototype.calculateRentalDays = function () {
   return Math.max(1, rentalDays);
 };
 
-// NEW: Get time difference info for display
+// Get time difference info for display
 Booking.prototype.getTimeExcessInfo = function () {
   if (!this.pickupTime || !this.returnTime) {
     return null;
@@ -308,13 +308,13 @@ Booking.prototype.canBeCancelled = function () {
   return allowedStatuses.includes(this.status);
 };
 
-// NEW: Check if booking has time-based extra charges
+// Check if booking has time-based extra charges
 Booking.prototype.hasTimeExtraCharge = function () {
   const timeInfo = this.getTimeExcessInfo();
   return timeInfo && timeInfo.hasExcess;
 };
 
-// NEW: Get formatted time display
+// Get formatted time display
 Booking.prototype.getFormattedTimes = function () {
   return {
     pickup: this.pickupTime || "00:00",
@@ -328,6 +328,26 @@ Booking.prototype.getFormattedTimes = function () {
         ? `${this.returnDate} ${this.returnTime}`
         : null,
   };
+};
+
+// UPDATED: Define default customer attributes to include (removed city, postalCode, etc.)
+Booking.getCustomerAttributes = function () {
+  return [
+    "id",
+    "firstName",
+    "lastName",
+    "phone",
+    "email",
+    "dateOfBirth",
+    "address", // Single address field
+    "country",
+    "driverLicenseNumber",
+  ];
+};
+
+// UPDATED: Define default vehicle attributes to include
+Booking.getVehicleAttributes = function () {
+  return ["id", "name", "brand", "year", "licensePlate", "price", "mileage"];
 };
 
 // Class methods
@@ -379,8 +399,6 @@ Booking.generateBookingNumber = async function () {
 
   return bookingNumber;
 };
-
-// NEW: Static method for time calculation (for use in controllers)
 
 Booking.checkVehicleAvailability = async function (
   vehicleId,

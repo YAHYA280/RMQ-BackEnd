@@ -1,4 +1,4 @@
-// src/routes/customers.js - UPDATED: Added routes for passport and CIN document uploads
+// src/routes/customers.js - UPDATED: Removed routes and validation for city, postalCode, emergencyContact, notes, and referralCode
 const express = require("express");
 const {
   getCustomers,
@@ -8,9 +8,9 @@ const {
   deleteCustomer,
   updateCustomerStatus,
   uploadDriverLicense,
-  uploadPassport, // NEW
-  uploadCin, // NEW
-  uploadCustomerDocuments, // NEW
+  uploadPassport,
+  uploadCin,
+  uploadCustomerDocuments,
   getCustomerStats,
   searchCustomers,
 } = require("../controllers/customers");
@@ -18,14 +18,14 @@ const {
 const { protect, authorize } = require("../middleware/auth");
 const {
   uploadDriverLicense: uploadDriverLicenseMiddleware,
-  uploadPassportImage, // NEW
-  uploadCinImage, // NEW
-  uploadCustomerDocuments: uploadCustomerDocumentsMiddleware, // NEW
+  uploadPassportImage,
+  uploadCinImage,
+  uploadCustomerDocuments: uploadCustomerDocumentsMiddleware,
   handleUploadError,
-  validateCustomerImages, // NEW
-  processCustomerDocuments, // NEW
-  validateDocumentType, // NEW
-  validateFileSize, // NEW
+  validateCustomerImages,
+  processCustomerDocuments,
+  validateDocumentType,
+  validateFileSize,
 } = require("../middleware/upload");
 const {
   validateCustomer,
@@ -103,7 +103,7 @@ router.put(
   uploadDriverLicense
 );
 
-// NEW: Upload passport only
+// Upload passport only
 router.put(
   "/:id/passport",
   validateUUID,
@@ -115,7 +115,7 @@ router.put(
   uploadPassport
 );
 
-// NEW: Upload CIN only
+// Upload CIN only
 router.put(
   "/:id/cin",
   validateUUID,
@@ -127,7 +127,7 @@ router.put(
   uploadCin
 );
 
-// NEW: Upload multiple documents at once
+// Upload multiple documents at once
 router.put(
   "/:id/documents",
   validateUUID,
@@ -141,7 +141,7 @@ router.put(
 
 // ========== ADDITIONAL UTILITY ROUTES ==========
 
-// NEW: Get customer document completion status
+// Get customer document completion status
 router.get("/:id/documents/status", validateUUID, async (req, res, next) => {
   try {
     const { Customer } = require("../models");
@@ -194,7 +194,7 @@ router.get("/:id/documents/status", validateUUID, async (req, res, next) => {
   }
 });
 
-// NEW: Remove specific document
+// Remove specific document
 router.delete(
   "/:id/documents/:documentType",
   validateUUID,
@@ -267,7 +267,7 @@ router.delete(
   }
 );
 
-// NEW: Get customers with incomplete documents
+// UPDATED: Get customers with incomplete documents (simplified criteria)
 router.get(
   "/filter/incomplete-documents",
   validatePagination,
@@ -281,7 +281,7 @@ router.get(
       const limitNum = parseInt(limit, 10);
       const offset = (pageNum - 1) * limitNum;
 
-      // Find customers with incomplete documentation
+      // UPDATED: Find customers with incomplete documentation (simplified fields)
       const { count, rows: customers } = await Customer.findAndCountAll({
         where: {
           [Op.or]: [
@@ -336,7 +336,7 @@ router.get(
   }
 );
 
-// NEW: Bulk document upload for multiple customers
+// Bulk document upload for multiple customers
 router.post("/bulk/documents", async (req, res, next) => {
   try {
     const { customers } = req.body; // Array of customer updates

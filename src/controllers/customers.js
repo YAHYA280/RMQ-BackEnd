@@ -1,11 +1,11 @@
-// src/controllers/customers.js - UPDATED: Added support for passport and CIN documents
+// src/controllers/customers.js - UPDATED: Removed city, postalCode, emergencyContact, notes, and referralCode
 const { Customer, Admin } = require("../models/index");
 const { validationResult } = require("express-validator");
 const { Op } = require("sequelize");
 const asyncHandler = require("../middleware/asyncHandler");
 const ErrorResponse = require("../utils/errorResponse");
 
-// UPDATED: Helper function to transform customer data for response with all document types
+// UPDATED: Helper function to transform customer data for response with simplified fields
 const transformCustomerForResponse = (customer) => {
   const customerData = customer.toJSON();
 
@@ -18,7 +18,7 @@ const transformCustomerForResponse = (customer) => {
     };
   }
 
-  // NEW: Convert passport image BYTEA to data URL
+  // Convert passport image BYTEA to data URL
   if (customer.passportImageData && customer.passportImageMimetype) {
     customerData.passportImage = {
       dataUrl: customer.getPassportImageDataUrl(),
@@ -27,7 +27,7 @@ const transformCustomerForResponse = (customer) => {
     };
   }
 
-  // NEW: Convert CIN image BYTEA to data URL
+  // Convert CIN image BYTEA to data URL
   if (customer.cinImageData && customer.cinImageMimetype) {
     customerData.cinImage = {
       dataUrl: customer.getCinImageDataUrl(),
@@ -39,10 +39,10 @@ const transformCustomerForResponse = (customer) => {
   // Format phone number for display
   customerData.phoneFormatted = customer.getFormattedPhone();
 
-  // NEW: Add document completion status
+  // Add document completion status
   customerData.documentCompletion = customer.hasCompleteDocumentation();
 
-  // NEW: Add age if date of birth is available
+  // Add age if date of birth is available
   if (customer.dateOfBirth) {
     customerData.age = customer.getAge();
   }
@@ -63,7 +63,7 @@ exports.getCustomers = asyncHandler(async (req, res, next) => {
     order = "DESC",
     source,
     tier,
-    documentStatus, // NEW: Filter by document completion status
+    documentStatus,
   } = req.query;
 
   // Build where clause
@@ -77,7 +77,7 @@ exports.getCustomers = asyncHandler(async (req, res, next) => {
     where.source = Array.isArray(source) ? { [Op.in]: source } : source;
   }
 
-  // NEW: Filter by document completion status
+  // Filter by document completion status
   if (documentStatus) {
     switch (documentStatus) {
       case "complete":
@@ -108,20 +108,18 @@ exports.getCustomers = asyncHandler(async (req, res, next) => {
     }
   }
 
-  // UPDATED: Enhanced search functionality with new fields
+  // UPDATED: Enhanced search functionality with simplified fields
   if (search) {
     where[Op.or] = [
       { firstName: { [Op.iLike]: `%${search}%` } },
       { lastName: { [Op.iLike]: `%${search}%` } },
       { email: { [Op.iLike]: `%${search}%` } },
       { phone: { [Op.like]: `%${search}%` } },
-      { referralCode: { [Op.iLike]: `%${search}%` } },
-      // NEW: Search in document numbers
+      // Search in document numbers
       { driverLicenseNumber: { [Op.iLike]: `%${search}%` } },
       { passportNumber: { [Op.iLike]: `%${search}%` } },
       { cinNumber: { [Op.iLike]: `%${search}%` } },
       { address: { [Op.iLike]: `%${search}%` } },
-      { city: { [Op.iLike]: `%${search}%` } },
     ];
   }
 
@@ -243,7 +241,7 @@ exports.createCustomer = asyncHandler(async (req, res, next) => {
     req.body.email = null;
   }
 
-  // UPDATED: Handle all document image uploads
+  // Handle all document image uploads
   let documentData = {};
 
   // Process driver license image
@@ -258,7 +256,7 @@ exports.createCustomer = asyncHandler(async (req, res, next) => {
     documentData.driverLicenseImageName = file.originalname;
   }
 
-  // NEW: Process passport image
+  // Process passport image
   if (req.files && req.files.passportImage && req.files.passportImage[0]) {
     const file = req.files.passportImage[0];
     documentData.passportImageData = file.buffer;
@@ -266,7 +264,7 @@ exports.createCustomer = asyncHandler(async (req, res, next) => {
     documentData.passportImageName = file.originalname;
   }
 
-  // NEW: Process CIN image
+  // Process CIN image
   if (req.files && req.files.cinImage && req.files.cinImage[0]) {
     const file = req.files.cinImage[0];
     documentData.cinImageData = file.buffer;
@@ -366,7 +364,7 @@ exports.updateCustomer = asyncHandler(async (req, res, next) => {
     req.body.email = null;
   }
 
-  // UPDATED: Handle all document image uploads for updates
+  // Handle all document image uploads for updates
   let documentUpdates = {};
 
   // Process driver license image
@@ -381,7 +379,7 @@ exports.updateCustomer = asyncHandler(async (req, res, next) => {
     documentUpdates.driverLicenseImageName = file.originalname;
   }
 
-  // NEW: Process passport image
+  // Process passport image
   if (req.files && req.files.passportImage && req.files.passportImage[0]) {
     const file = req.files.passportImage[0];
     documentUpdates.passportImageData = file.buffer;
@@ -389,7 +387,7 @@ exports.updateCustomer = asyncHandler(async (req, res, next) => {
     documentUpdates.passportImageName = file.originalname;
   }
 
-  // NEW: Process CIN image
+  // Process CIN image
   if (req.files && req.files.cinImage && req.files.cinImage[0]) {
     const file = req.files.cinImage[0];
     documentUpdates.cinImageData = file.buffer;
@@ -511,7 +509,7 @@ exports.updateCustomerStatus = asyncHandler(async (req, res, next) => {
   });
 });
 
-// UPDATED: Upload customer driver license (legacy endpoint)
+// Upload customer driver license (legacy endpoint)
 // @route   PUT /api/customers/:id/driver-license
 // @access  Private (admin)
 exports.uploadDriverLicense = asyncHandler(async (req, res, next) => {
@@ -547,7 +545,7 @@ exports.uploadDriverLicense = asyncHandler(async (req, res, next) => {
   });
 });
 
-// NEW: Upload customer passport
+// Upload customer passport
 // @route   PUT /api/customers/:id/passport
 // @access  Private (admin)
 exports.uploadPassport = asyncHandler(async (req, res, next) => {
@@ -580,7 +578,7 @@ exports.uploadPassport = asyncHandler(async (req, res, next) => {
   });
 });
 
-// NEW: Upload customer CIN
+// Upload customer CIN
 // @route   PUT /api/customers/:id/cin
 // @access  Private (admin)
 exports.uploadCin = asyncHandler(async (req, res, next) => {
@@ -613,7 +611,7 @@ exports.uploadCin = asyncHandler(async (req, res, next) => {
   });
 });
 
-// NEW: Upload multiple customer documents at once
+// Upload multiple customer documents at once
 // @route   PUT /api/customers/:id/documents
 // @access  Private (admin)
 exports.uploadCustomerDocuments = asyncHandler(async (req, res, next) => {
@@ -673,7 +671,7 @@ exports.uploadCustomerDocuments = asyncHandler(async (req, res, next) => {
   });
 });
 
-// UPDATED: Get customer statistics with document completion metrics
+// UPDATED: Get customer statistics with simplified document completion metrics
 // @route   GET /api/customers/stats
 // @access  Private (admin)
 exports.getCustomerStats = asyncHandler(async (req, res, next) => {
@@ -731,7 +729,7 @@ exports.getCustomerStats = asyncHandler(async (req, res, next) => {
     raw: true,
   });
 
-  // NEW: Get document completion statistics
+  // Document completion statistics (simplified)
   const documentStats = {
     customersWithDriverLicense: parseInt(stats.customersWithDriverLicense) || 0,
     customersWithPassport: parseInt(stats.customersWithPassport) || 0,

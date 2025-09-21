@@ -1,4 +1,4 @@
-// src/services/contractGenerator.js - UPDATED: Using all new customer fields
+// src/services/contractGenerator.js - UPDATED: Simplified for new customer fields structure
 const PDFDocument = require("pdfkit");
 const fs = require("fs");
 const path = require("path");
@@ -15,7 +15,7 @@ class ContractGenerator {
     return new Promise((resolve, reject) => {
       try {
         console.log(
-          "Generating contract with all customer fields for:",
+          "Generating contract with simplified customer fields for:",
           bookingData.bookingNumber
         );
 
@@ -50,8 +50,8 @@ class ContractGenerator {
           height: doc.page.height,
         });
 
-        // Overlay the data using your precise coordinates with all new fields
-        this.overlayDataWithAllFields(doc, bookingData);
+        // Overlay the data using simplified customer structure
+        this.overlayDataWithSimplifiedFields(doc, bookingData);
 
         doc.end();
       } catch (error) {
@@ -80,9 +80,9 @@ class ContractGenerator {
     return (imageCoord * pdfDimension) / imageDimension;
   }
 
-  // UPDATED: Enhanced data overlay with all new customer fields
-  overlayDataWithAllFields(doc, bookingData) {
-    // Set default text properties with better font and larger size
+  // UPDATED: Simplified data overlay for new customer structure
+  overlayDataWithSimplifiedFields(doc, bookingData) {
+    // Set default text properties
     doc.fillColor("#000000");
     doc.fontSize(12);
     doc.font("Helvetica-Bold");
@@ -160,7 +160,7 @@ class ContractGenerator {
     placeText(bookingData.bookingNumber, 1150, 1900, 14);
     doc.fillColor("#000000");
 
-    // Customer Information Section
+    // Customer Information Section (simplified)
     const customer = bookingData.customer;
 
     // Nom et Prénom: [350, 1565]
@@ -169,68 +169,56 @@ class ContractGenerator {
     }`;
     placeText(customerName, 350, 1565, 10);
 
-    // UPDATED: Nationalité: [310, 1506] - Use customer's country or default to Marocaine
+    // Nationalité: [310, 1506] - Use customer's country or default to Marocaine
     const nationality =
       this.getCountryNationality(customer.country) || "Marocaine";
     placeText(nationality, 310, 1506, 10);
 
-    // UPDATED: Date de Naissance: [412, 1410] - Use new dateOfBirth field
+    // Date de Naissance: [412, 1410] - Use dateOfBirth field
     if (customer.dateOfBirth) {
       const dob = formatDateFrench(customer.dateOfBirth);
       placeText(dob, 412, 1410, 10);
     }
 
-    // UPDATED: Passport N°: [310, 1395] - Use new passportNumber field
+    // Passport N°: [310, 1395] - Use passportNumber field
     if (customer.passportNumber) {
       placeText(customer.passportNumber, 310, 1395, 10);
     }
 
-    // UPDATED: Délivré à: [278, 1325] - Use new passportIssuedAt field
+    // Délivré à: [278, 1325] - Use passportIssuedAt field
     if (customer.passportIssuedAt) {
       placeText(customer.passportIssuedAt, 278, 1325, 10);
     }
 
-    // UPDATED: CIN: [300, 1255] - Use new cinNumber field
+    // CIN: [300, 1255] - Use cinNumber field
     if (customer.cinNumber) {
       placeText(customer.cinNumber, 300, 1255, 10);
     }
 
-    // UPDATED: Permis de conduite N°: [420, 1185] - Use enhanced driverLicenseNumber field
+    // Permis de conduite N°: [420, 1185] - Use driverLicenseNumber field
     if (customer.driverLicenseNumber) {
       placeText(customer.driverLicenseNumber, 420, 1185, 10);
     }
 
-    // UPDATED: Adresse: [160, 1115] - Use enhanced address field (now supports 500 chars)
+    // UPDATED: Adresse: [160, 1115] - Use simplified address field
     if (customer.address) {
-      // For longer addresses, we might need to wrap text or use smaller font
+      // Parse the address to extract city information if possible
       let addressText = customer.address;
-      if (customer.city) {
-        addressText += `, ${customer.city}`;
-      }
-      if (customer.postalCode) {
-        addressText += ` ${customer.postalCode}`;
-      }
 
-      // Use smaller font for longer addresses
+      // For display purposes, we can try to intelligently parse the address
+      // Since it's now a single field, we display it as-is but with formatting consideration
       const fontSize = addressText.length > 50 ? 8 : 10;
       placeText(addressText, 160, 1115, fontSize, 400); // Max width of 400 pixels
     }
 
-    // UPDATED: Numéro de téléphone: [250, 1045] - Enhanced phone formatting
+    // Numéro de téléphone: [250, 1045] - Enhanced phone formatting
     if (customer.phone) {
       // Format phone number for display
       const formattedPhone = this.formatPhoneNumber(customer.phone);
       placeText(formattedPhone, 250, 1045, 10);
     }
 
-    // NEW: Age (if needed elsewhere on the contract)
-    const customerAge = getCustomerAge(customer);
-    if (customerAge) {
-      // You can place age somewhere if needed on your template
-      // placeText(`${customerAge} ans`, x, y, 10);
-    }
-
-    // Vehicle Information Fields
+    // Vehicle Information Fields (unchanged)
     const vehicle = bookingData.vehicle;
 
     // Marque de véhicule: [1160, 1630]
@@ -264,14 +252,7 @@ class ContractGenerator {
     // Montant: [1160, 1060]
     placeText(`${bookingData.totalAmount || 0} DH`, 1160, 1060, 9);
 
-    // NEW: Additional fields that might be useful
-
-    // If you have space for emergency contact
-    if (customer.emergencyContact && customer.emergencyContact.name) {
-      // placeText(`Contact d'urgence: ${customer.emergencyContact.name}`, x, y, 8);
-    }
-
-    // If you want to show document verification status
+    // Additional information display
     const hasCompleteDocuments = !!(
       customer.driverLicenseNumber &&
       customer.passportNumber &&
@@ -280,17 +261,21 @@ class ContractGenerator {
       customer.address
     );
 
-    // You could add a small indicator if documents are complete
-    if (hasCompleteDocuments) {
-      // placeText("✓ Documents complets", x, y, 8);
-    }
-
-    console.log(
-      "Contract data overlayed with all customer fields and enhanced information"
-    );
+    console.log("Contract data overlayed with simplified customer structure:", {
+      customerName,
+      nationality,
+      hasDateOfBirth: !!customer.dateOfBirth,
+      hasAddress: !!customer.address,
+      hasDocuments: hasCompleteDocuments,
+      documentCount: [
+        customer.driverLicenseNumber,
+        customer.passportNumber,
+        customer.cinNumber,
+      ].filter(Boolean).length,
+    });
   }
 
-  // NEW: Helper function to get nationality from country code
+  // Helper function to get nationality from country code
   getCountryNationality(countryCode) {
     const nationalityMap = {
       MA: "Marocaine",
@@ -311,7 +296,7 @@ class ContractGenerator {
     return nationalityMap[countryCode] || null;
   }
 
-  // NEW: Helper function to format phone number for contract display
+  // Helper function to format phone number for contract display
   formatPhoneNumber(phone) {
     if (!phone) return "";
 
@@ -336,7 +321,7 @@ class ContractGenerator {
     return phone;
   }
 
-  // NEW: Validate that customer has required information for contract
+  // UPDATED: Validate that customer has required information for contract (simplified)
   validateCustomerInfo(customer) {
     const requiredFields = ["firstName", "lastName", "phone"];
     const missingFields = [];
@@ -365,7 +350,7 @@ class ContractGenerator {
     };
   }
 
-  // NEW: Calculate how complete the customer information is (0-100%)
+  // UPDATED: Calculate how complete the customer information is (simplified fields)
   calculateCompletionScore(customer) {
     const fields = [
       customer.firstName,
@@ -373,7 +358,7 @@ class ContractGenerator {
       customer.phone,
       customer.email,
       customer.dateOfBirth,
-      customer.address,
+      customer.address, // Simplified to single address field
       customer.driverLicenseNumber,
       customer.passportNumber,
       customer.cinNumber,
@@ -386,7 +371,7 @@ class ContractGenerator {
     return Math.round((completedFields / fields.length) * 100);
   }
 
-  // NEW: Generate contract with validation
+  // Generate contract with validation
   async generateContractWithValidation(bookingData) {
     const validation = this.validateCustomerInfo(bookingData.customer);
 
@@ -400,7 +385,7 @@ class ContractGenerator {
     return this.generateContract(bookingData);
   }
 
-  // NEW: Get missing customer information for UI display
+  // UPDATED: Get missing customer information for UI display (simplified)
   getMissingCustomerInfo(customer) {
     const allFields = {
       Prénom: customer.firstName,
@@ -408,7 +393,7 @@ class ContractGenerator {
       Téléphone: customer.phone,
       Email: customer.email,
       "Date de naissance": customer.dateOfBirth,
-      Adresse: customer.address,
+      Adresse: customer.address, // Simplified to single field
       "Numéro de permis de conduire": customer.driverLicenseNumber,
       "Numéro de passeport": customer.passportNumber,
       "Numéro CIN": customer.cinNumber,
@@ -433,6 +418,58 @@ class ContractGenerator {
       ),
       completionPercentage: this.calculateCompletionScore(customer),
     };
+  }
+
+  // UPDATED: Get contract readiness status (simplified)
+  getContractReadiness(customer) {
+    const missing = this.getMissingCustomerInfo(customer);
+
+    return {
+      isReady: missing.hasRequiredFields && missing.hasAnyIdentityDocument,
+      completionPercentage: missing.completionPercentage,
+      missingCriticalFields: missing.missingFields.filter((field) =>
+        ["Prénom", "Nom", "Téléphone"].includes(field)
+      ),
+      missingDocuments: missing.missingFields.filter(
+        (field) =>
+          field.includes("permis") ||
+          field.includes("passeport") ||
+          field.includes("CIN")
+      ),
+      recommendations: this.getContractRecommendations(customer),
+    };
+  }
+
+  // NEW: Get recommendations for improving contract completeness
+  getContractRecommendations(customer) {
+    const recommendations = [];
+
+    if (!customer.dateOfBirth) {
+      recommendations.push(
+        "Ajouter la date de naissance pour vérification d'âge"
+      );
+    }
+
+    if (!customer.address) {
+      recommendations.push("Ajouter l'adresse complète pour le contrat");
+    }
+
+    const hasAnyDoc = !!(
+      customer.driverLicenseNumber ||
+      customer.passportNumber ||
+      customer.cinNumber
+    );
+    if (!hasAnyDoc) {
+      recommendations.push("Ajouter au moins un document d'identité");
+    }
+
+    if (!customer.email) {
+      recommendations.push(
+        "Ajouter l'email pour les notifications (optionnel)"
+      );
+    }
+
+    return recommendations;
   }
 }
 

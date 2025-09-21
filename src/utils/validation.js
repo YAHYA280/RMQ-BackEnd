@@ -1,4 +1,4 @@
-// src/utils/validation.js - UPDATED: Added validation for new customer fields
+// src/utils/validation.js - UPDATED: Removed validation for city, postalCode, emergencyContact, notes, and referralCode
 const { body, param, query } = require("express-validator");
 
 // Admin registration validation
@@ -282,7 +282,7 @@ exports.validateVehicleUpdate = [
     .withMessage("Please enter a valid date for last oil change"),
 ];
 
-// UPDATED: Customer validation with new fields
+// UPDATED: Customer validation with simplified fields (removed city, postalCode, notes, emergencyContact)
 exports.validateCustomer = [
   // Basic required fields
   body("firstName")
@@ -313,7 +313,7 @@ exports.validateCustomer = [
       "Veuillez saisir un numéro de téléphone marocain valide (06XXXXXXXX ou 07XXXXXXXX)"
     ),
 
-  // NEW: Date of birth validation
+  // Date of birth validation
   body("dateOfBirth")
     .optional()
     .isISO8601()
@@ -334,26 +334,20 @@ exports.validateCustomer = [
       return true;
     }),
 
-  // NEW: Address validation (increased length)
+  // Address validation (simplified to single field)
   body("address")
     .optional()
     .trim()
     .isLength({ max: 500 })
     .withMessage("L'adresse ne peut pas dépasser 500 caractères"),
 
-  body("city")
+  // Country validation
+  body("country")
     .optional()
-    .trim()
-    .isLength({ max: 50 })
-    .withMessage("La ville ne peut pas dépasser 50 caractères"),
+    .isLength({ min: 2, max: 2 })
+    .withMessage("Le code pays doit contenir exactement 2 caractères"),
 
-  body("postalCode")
-    .optional()
-    .trim()
-    .isLength({ max: 10 })
-    .withMessage("Le code postal ne peut pas dépasser 10 caractères"),
-
-  // NEW: Driver license number validation
+  // Driver license number validation
   body("driverLicenseNumber")
     .optional()
     .trim()
@@ -362,14 +356,14 @@ exports.validateCustomer = [
       "Le numéro de permis de conduire ne peut pas dépasser 20 caractères"
     ),
 
-  // NEW: Passport number validation
+  // Passport number validation
   body("passportNumber")
     .optional()
     .trim()
     .isLength({ max: 20 })
     .withMessage("Le numéro de passeport ne peut pas dépasser 20 caractères"),
 
-  // NEW: Passport issued at validation
+  // Passport issued at validation
   body("passportIssuedAt")
     .optional()
     .trim()
@@ -378,21 +372,15 @@ exports.validateCustomer = [
       "Le lieu de délivrance du passeport ne peut pas dépasser 100 caractères"
     ),
 
-  // NEW: CIN number validation
+  // CIN number validation
   body("cinNumber")
     .optional()
     .trim()
     .isLength({ max: 20 })
     .withMessage("Le numéro CIN ne peut pas dépasser 20 caractères"),
-
-  body("notes")
-    .optional()
-    .trim()
-    .isLength({ max: 500 })
-    .withMessage("Les notes ne peuvent pas dépasser 500 caractères"),
 ];
 
-// UPDATED: Customer update validation with new fields
+// UPDATED: Customer update validation with simplified fields
 exports.validateCustomerUpdate = [
   body("firstName")
     .optional()
@@ -425,7 +413,7 @@ exports.validateCustomerUpdate = [
       "Veuillez saisir un numéro de téléphone marocain valide (06XXXXXXXX ou 07XXXXXXXX)"
     ),
 
-  // NEW: Date of birth validation for updates
+  // Date of birth validation for updates
   body("dateOfBirth")
     .optional()
     .isISO8601()
@@ -446,26 +434,20 @@ exports.validateCustomerUpdate = [
       return true;
     }),
 
-  // NEW: Address validation for updates
+  // Address validation for updates (simplified)
   body("address")
     .optional()
     .trim()
     .isLength({ max: 500 })
     .withMessage("L'adresse ne peut pas dépasser 500 caractères"),
 
-  body("city")
+  // Country validation
+  body("country")
     .optional()
-    .trim()
-    .isLength({ max: 50 })
-    .withMessage("La ville ne peut pas dépasser 50 caractères"),
+    .isLength({ min: 2, max: 2 })
+    .withMessage("Le code pays doit contenir exactement 2 caractères"),
 
-  body("postalCode")
-    .optional()
-    .trim()
-    .isLength({ max: 10 })
-    .withMessage("Le code postal ne peut pas dépasser 10 caractères"),
-
-  // NEW: Document number validations for updates
+  // Document number validations for updates
   body("driverLicenseNumber")
     .optional()
     .trim()
@@ -498,12 +480,6 @@ exports.validateCustomerUpdate = [
     .optional()
     .isIn(["active", "inactive", "blocked"])
     .withMessage("Le statut doit être actif, inactif ou bloqué"),
-
-  body("notes")
-    .optional()
-    .trim()
-    .isLength({ max: 500 })
-    .withMessage("Les notes ne peuvent pas dépasser 500 caractères"),
 ];
 
 // Booking validation
@@ -647,9 +623,9 @@ exports.validatePagination = [
     .withMessage("Limit must be between 1 and 100"),
 ];
 
-// Website booking validation with new customer fields
+// UPDATED: Website booking validation with simplified customer fields
 exports.validateWebsiteBooking = [
-  // Customer information
+  // Customer information (simplified)
   body("firstName")
     .trim()
     .notEmpty()
@@ -740,7 +716,7 @@ exports.validateWebsiteBooking = [
     .withMessage("Please select a valid return location"),
 ];
 
-// Admin booking validation
+// UPDATED: Admin booking validation (simplified)
 exports.validateAdminBooking = [
   body("customerId")
     .notEmpty()

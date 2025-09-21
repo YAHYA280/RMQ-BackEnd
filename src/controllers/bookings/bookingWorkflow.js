@@ -1,4 +1,4 @@
-// src/controllers/bookings/bookingWorkflow.js - PART 3: Booking Workflow Functions
+// src/controllers/bookings/bookingWorkflow.js - UPDATED: Fixed customer attributes to match simplified Customer model
 const { Booking, Customer, Vehicle, Admin } = require("../../models");
 const asyncHandler = require("../../middleware/asyncHandler");
 const ErrorResponse = require("../../utils/errorResponse");
@@ -20,10 +20,12 @@ exports.confirmBooking = asyncHandler(async (req, res, next) => {
           "phone",
           "email",
           "dateOfBirth",
-          "address",
-          "city",
+          "address", // Single address field (removed city)
           "country",
           "driverLicenseNumber",
+          "passportNumber",
+          "passportIssuedAt",
+          "cinNumber",
         ],
       },
       {

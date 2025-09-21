@@ -1,4 +1,4 @@
-// src/models/Customer.js - UPDATED: Added passport, CIN, and additional fields
+// src/models/Customer.js - UPDATED: Removed city, postalCode, emergencyContact, notes, and referralCode
 const { DataTypes } = require("sequelize");
 const { sequelize } = require("../config/database");
 
@@ -56,20 +56,6 @@ const Customer = sequelize.define(
         len: [0, 500],
       },
     },
-    city: {
-      type: DataTypes.STRING(50),
-      allowNull: true,
-      validate: {
-        len: [0, 50],
-      },
-    },
-    postalCode: {
-      type: DataTypes.STRING(10),
-      allowNull: true,
-      validate: {
-        len: [0, 10],
-      },
-    },
     country: {
       type: DataTypes.STRING(2),
       defaultValue: "MA", // Morocco
@@ -77,7 +63,7 @@ const Customer = sequelize.define(
         len: [2, 2],
       },
     },
-    // UPDATED: Driver license information
+    // Driver license information
     driverLicenseNumber: {
       type: DataTypes.STRING(20),
       allowNull: true, // Optional
@@ -99,7 +85,7 @@ const Customer = sequelize.define(
       allowNull: true,
     },
 
-    // NEW: Passport information
+    // Passport information
     passportNumber: {
       type: DataTypes.STRING(20),
       allowNull: true, // Optional
@@ -128,7 +114,7 @@ const Customer = sequelize.define(
       allowNull: true,
     },
 
-    // NEW: CIN (Carte d'Identité Nationale) - Moroccan ID Card
+    // CIN (Carte d'Identité Nationale) - Moroccan ID Card
     cinNumber: {
       type: DataTypes.STRING(20),
       allowNull: true, // Optional
@@ -150,11 +136,7 @@ const Customer = sequelize.define(
       allowNull: true,
     },
 
-    emergencyContact: {
-      type: DataTypes.JSONB,
-      defaultValue: null,
-      // Structure: { name: "...", phone: "...", relationship: "..." }
-    },
+    // Simplified preferences (removed emergencyContact)
     preferences: {
       type: DataTypes.JSONB,
       defaultValue: {},
@@ -194,10 +176,6 @@ const Customer = sequelize.define(
       type: DataTypes.ENUM("website", "admin", "referral", "social", "other"),
       defaultValue: "website",
     },
-    referralCode: {
-      type: DataTypes.STRING(10),
-      unique: true,
-    },
     // Verification
     emailVerified: {
       type: DataTypes.BOOLEAN,
@@ -216,20 +194,11 @@ const Customer = sequelize.define(
         key: "id",
       },
     },
-    notes: {
-      type: DataTypes.TEXT,
-    },
   },
   {
     tableName: "customers",
     timestamps: true,
     hooks: {
-      beforeCreate: async (customer) => {
-        // Generate unique referral code
-        if (!customer.referralCode) {
-          customer.referralCode = await Customer.generateReferralCode();
-        }
-      },
       beforeValidate: async (customer) => {
         // Make email unique only if provided
         if (customer.email && customer.email.trim() === "") {
@@ -254,11 +223,7 @@ const Customer = sequelize.define(
       {
         fields: ["created_by_id"],
       },
-      {
-        fields: ["referral_code"],
-        unique: true,
-      },
-      // NEW: Index for passport and CIN numbers for quick lookup
+      // Index for passport and CIN numbers for quick lookup
       {
         fields: ["passport_number"],
         where: {
@@ -304,7 +269,7 @@ Customer.prototype.getDriverLicenseImageDataUrl = function () {
   return null;
 };
 
-// NEW: Get passport image as base64 data URL for frontend
+// Get passport image as base64 data URL for frontend
 Customer.prototype.getPassportImageDataUrl = function () {
   if (this.passportImageData && this.passportImageMimetype) {
     const base64 = this.passportImageData.toString("base64");
@@ -313,7 +278,7 @@ Customer.prototype.getPassportImageDataUrl = function () {
   return null;
 };
 
-// NEW: Get CIN image as base64 data URL for frontend
+// Get CIN image as base64 data URL for frontend
 Customer.prototype.getCinImageDataUrl = function () {
   if (this.cinImageData && this.cinImageMimetype) {
     const base64 = this.cinImageData.toString("base64");
@@ -382,7 +347,7 @@ Customer.prototype.getCustomerTier = function () {
   return "bronze";
 };
 
-// NEW: Check if customer has all required documents for contract
+// UPDATED: Check if customer has all required documents for contract (simplified)
 Customer.prototype.hasCompleteDocumentation = function () {
   return {
     hasDriverLicense: !!(
@@ -402,27 +367,7 @@ Customer.prototype.hasCompleteDocumentation = function () {
   };
 };
 
-// Class methods
-Customer.generateReferralCode = async function () {
-  let code;
-  let isUnique = false;
-
-  while (!isUnique) {
-    // Generate 6-character alphanumeric code
-    code = Math.random().toString(36).substring(2, 8).toUpperCase();
-
-    const existingCustomer = await Customer.findOne({
-      where: { referralCode: code },
-    });
-
-    if (!existingCustomer) {
-      isUnique = true;
-    }
-  }
-
-  return code;
-};
-
+// Class methods (removed referral code generation)
 Customer.searchCustomers = async function (searchTerm, options = {}) {
   const {
     limit = 10,
@@ -444,8 +389,7 @@ Customer.searchCustomers = async function (searchTerm, options = {}) {
       { lastName: { [require("sequelize").Op.iLike]: `%${searchTerm}%` } },
       { email: { [require("sequelize").Op.iLike]: `%${searchTerm}%` } },
       { phone: { [require("sequelize").Op.like]: `%${searchTerm}%` } },
-      { referralCode: { [require("sequelize").Op.iLike]: `%${searchTerm}%` } },
-      // NEW: Search in passport and CIN numbers
+      // Search in passport and CIN numbers
       {
         passportNumber: { [require("sequelize").Op.iLike]: `%${searchTerm}%` },
       },
@@ -498,7 +442,7 @@ Customer.getCustomerStats = async function () {
         "averageLifetimeValue",
       ],
       [sequelize.fn("AVG", sequelize.col("totalBookings")), "averageBookings"],
-      // NEW: Stats for document completion
+      // Stats for document completion
       [
         sequelize.fn(
           "COUNT",
