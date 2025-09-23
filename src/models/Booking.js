@@ -1,4 +1,4 @@
-// src/models/Booking.js - UPDATED: Fixed customer includes to match simplified Customer model
+// src/models/Booking.js - FIXED: Customer attributes and association includes
 const { DataTypes } = require("sequelize");
 const { sequelize } = require("../config/database");
 const {
@@ -330,7 +330,7 @@ Booking.prototype.getFormattedTimes = function () {
   };
 };
 
-// UPDATED: Define default customer attributes to include (removed city, postalCode, etc.)
+// FIXED: Define default customer attributes to include (simplified to match your new structure)
 Booking.getCustomerAttributes = function () {
   return [
     "id",
@@ -342,10 +342,13 @@ Booking.getCustomerAttributes = function () {
     "address", // Single address field
     "country",
     "driverLicenseNumber",
+    "passportNumber",
+    "passportIssuedAt",
+    "cinNumber",
   ];
 };
 
-// UPDATED: Define default vehicle attributes to include
+// Define default vehicle attributes to include
 Booking.getVehicleAttributes = function () {
   return ["id", "name", "brand", "year", "licensePlate", "price", "mileage"];
 };

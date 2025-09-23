@@ -1,4 +1,3 @@
-// src/services/contractGenerator.js - UPDATED: Simplified for new customer fields structure
 const PDFDocument = require("pdfkit");
 const fs = require("fs");
 const path = require("path");
@@ -6,7 +5,6 @@ const path = require("path");
 class ContractGenerator {
   constructor() {
     this.templatePath = path.join(__dirname, "../assets/contract-template.jpg");
-    // Exact template dimensions you provided
     this.imageWidth = 1414; // Template width in pixels
     this.imageHeight = 2000; // Template height in pixels
   }
@@ -14,18 +12,19 @@ class ContractGenerator {
   async generateContract(bookingData) {
     return new Promise((resolve, reject) => {
       try {
-        console.log(
-          "Generating contract with simplified customer fields for:",
-          bookingData.bookingNumber
-        );
-
         if (!this.validateBookingData(bookingData)) {
+          console.error("Invalid booking data:", {
+            hasBooking: !!bookingData,
+            hasCustomer: !!bookingData?.customer,
+            hasVehicle: !!bookingData?.vehicle,
+            hasBookingNumber: !!bookingData?.bookingNumber,
+          });
           throw new Error("Invalid booking data provided");
         }
 
-        // Check if template image exists
         if (!fs.existsSync(this.templatePath)) {
-          throw new Error(`Template image not found at: ${this.templatePath}`);
+          console.error(`Template image not found at: ${this.templatePath}`);
+          return this.generateSimplePDF(bookingData, resolve, reject);
         }
 
         const doc = new PDFDocument({
@@ -41,14 +40,27 @@ class ContractGenerator {
 
         const chunks = [];
         doc.on("data", (chunk) => chunks.push(chunk));
-        doc.on("end", () => resolve(Buffer.concat(chunks)));
-        doc.on("error", (err) => reject(err));
+        doc.on("end", () => {
+          console.log(
+            `Contract PDF generated successfully for ${bookingData.bookingNumber}`
+          );
+          resolve(Buffer.concat(chunks));
+        });
+        doc.on("error", (err) => {
+          console.error("PDF generation error:", err);
+          reject(err);
+        });
 
         // Add the background template image
-        doc.image(this.templatePath, 0, 0, {
-          width: doc.page.width,
-          height: doc.page.height,
-        });
+        try {
+          doc.image(this.templatePath, 0, 0, {
+            width: doc.page.width,
+            height: doc.page.height,
+          });
+        } catch (imageError) {
+          console.error("Error loading template image:", imageError);
+          // Continue without template
+        }
 
         // Overlay the data using simplified customer structure
         this.overlayDataWithSimplifiedFields(doc, bookingData);
@@ -61,16 +73,132 @@ class ContractGenerator {
     });
   }
 
-  validateBookingData(bookingData) {
-    return (
-      bookingData &&
-      bookingData.customer &&
-      bookingData.vehicle &&
-      bookingData.bookingNumber
-    );
+  generateSimplePDF(bookingData, resolve, reject) {
+    try {
+      const doc = new PDFDocument({
+        size: "A4",
+        margin: 50,
+        info: {
+          Title: `Contrat ${bookingData.bookingNumber}`,
+          Author: "MELHOR QUE NADA CARS",
+          Subject: "Contrat de Location de Voiture",
+          CreationDate: new Date(),
+        },
+      });
+
+      const chunks = [];
+      doc.on("data", (chunk) => chunks.push(chunk));
+      doc.on("end", () => {
+        resolve(Buffer.concat(chunks));
+      });
+      doc.on("error", (err) => {
+        reject(err);
+      });
+      this.generateSimpleContractContent(doc, bookingData);
+      doc.end();
+    } catch (error) {
+      reject(error);
+    }
   }
 
-  // Convert Photoshop Y coordinate to PDF Y coordinate
+  generateSimpleContractContent(doc, bookingData) {
+    const customer = bookingData.customer;
+    const vehicle = bookingData.vehicle;
+
+    // Title
+    doc.fontSize(20).font("Helvetica-Bold");
+    doc.text("CONTRAT DE LOCATION DE VOITURE", 50, 50, { align: "center" });
+
+    // Contract number
+    doc.fontSize(14).fillColor("red");
+    doc.text(`Contrat N°: ${bookingData.bookingNumber}`, 400, 80);
+
+    doc.fillColor("black").fontSize(12).font("Helvetica");
+
+    // Customer section
+    doc.text("INFORMATIONS CLIENT:", 50, 150);
+    doc.fontSize(10);
+    doc.text(`Nom: ${customer.firstName} ${customer.lastName}`, 50, 170);
+    doc.text(`Téléphone: ${customer.phone}`, 50, 185);
+    if (customer.email) doc.text(`Email: ${customer.email}`, 50, 200);
+    if (customer.address) doc.text(`Adresse: ${customer.address}`, 50, 215);
+    if (customer.dateOfBirth)
+      doc.text(`Date de naissance: ${customer.dateOfBirth}`, 50, 230);
+    if (customer.driverLicenseNumber)
+      doc.text(`Permis N°: ${customer.driverLicenseNumber}`, 50, 245);
+    if (customer.passportNumber)
+      doc.text(`Passeport N°: ${customer.passportNumber}`, 50, 260);
+    if (customer.cinNumber) doc.text(`CIN N°: ${customer.cinNumber}`, 50, 275);
+
+    // Vehicle section
+    doc.fontSize(12).font("Helvetica-Bold");
+    doc.text("INFORMATIONS VÉHICULE:", 50, 310);
+    doc.fontSize(10).font("Helvetica");
+    doc.text(`Véhicule: ${vehicle.brand} ${vehicle.name}`, 50, 330);
+    doc.text(`Année: ${vehicle.year}`, 50, 345);
+    doc.text(`Plaque: ${vehicle.licensePlate}`, 50, 360);
+    doc.text(`Prix journalier: ${bookingData.dailyRate} €`, 50, 370);
+
+    // Booking details
+    doc.fontSize(12).font("Helvetica-Bold");
+    doc.text("DÉTAILS DE LA LOCATION:", 50, 410);
+    doc.fontSize(10).font("Helvetica");
+    doc.text(
+      `Date de départ: ${bookingData.pickupDate} à ${bookingData.pickupTime}`,
+      50,
+      430
+    );
+    doc.text(
+      `Date de retour: ${bookingData.returnDate} à ${bookingData.returnTime}`,
+      50,
+      445
+    );
+    doc.text(`Lieu de départ: ${bookingData.pickupLocation}`, 50, 460);
+    doc.text(`Lieu de retour: ${bookingData.returnLocation}`, 50, 475);
+    doc.text(`Durée: ${bookingData.totalDays} jour(s)`, 50, 490);
+
+    // Total
+    doc.fontSize(14).font("Helvetica-Bold");
+    doc.text(`MONTANT TOTAL: ${bookingData.totalAmount} €`, 50, 520);
+
+    // Signature section
+    doc.fontSize(10).font("Helvetica");
+    doc.text("Signature du client:", 50, 650);
+    doc.text("Date et lieu:", 300, 650);
+
+    doc.text("Signature de l'agence:", 50, 700);
+    doc.text("Cachet de l'entreprise:", 300, 700);
+  }
+
+  validateBookingData(bookingData) {
+    if (!bookingData) {
+      console.error("No booking data provided");
+      return false;
+    }
+
+    if (!bookingData.customer) {
+      console.error("No customer data in booking");
+      return false;
+    }
+
+    if (!bookingData.vehicle) {
+      console.error("No vehicle data in booking");
+      return false;
+    }
+
+    if (!bookingData.bookingNumber) {
+      console.error("No booking number provided");
+      return false;
+    }
+
+    if (!bookingData.customer.firstName || !bookingData.customer.lastName) {
+      console.error("Customer missing name information");
+      return false;
+    }
+
+    return true;
+  }
+
   convertY(photoshopY) {
     return this.imageHeight - photoshopY;
   }
@@ -80,199 +208,205 @@ class ContractGenerator {
     return (imageCoord * pdfDimension) / imageDimension;
   }
 
-  // UPDATED: Simplified data overlay for new customer structure
   overlayDataWithSimplifiedFields(doc, bookingData) {
-    // Set default text properties
-    doc.fillColor("#000000");
-    doc.fontSize(12);
-    doc.font("Helvetica-Bold");
-
-    // Calculate scaling factors based on A4 PDF size
-    const pdfWidth = doc.page.width; // ~595 points for A4
-    const pdfHeight = doc.page.height; // ~842 points for A4
-
-    // Scale factors to convert your image coordinates to PDF coordinates
-    const scaleX = pdfWidth / this.imageWidth;
-    const scaleY = pdfHeight / this.imageHeight;
-
-    // Helper function to place text at scaled coordinates
-    const placeText = (text, x, y, fontSize = 12, maxWidth = null) => {
-      if (!text) return;
-
-      // Convert image coordinates to PDF coordinates
-      const pdfX = x * scaleX;
-      const pdfY = pdfHeight - y * scaleY;
-
-      doc.fontSize(fontSize);
+    try {
+      doc.fillColor("#000000");
+      doc.fontSize(12);
       doc.font("Helvetica-Bold");
 
-      if (maxWidth) {
-        const scaledWidth = maxWidth * scaleX;
-        doc.text(text, pdfX, pdfY, { width: scaledWidth, ellipsis: true });
-      } else {
-        doc.text(text, pdfX, pdfY);
+      const pdfWidth = doc.page.width;
+      const pdfHeight = doc.page.height;
+
+      const scaleX = pdfWidth / this.imageWidth;
+      const scaleY = pdfHeight / this.imageHeight;
+
+      const placeText = (text, x, y, fontSize = 12, maxWidth = null) => {
+        if (!text) return;
+
+        try {
+          const pdfX = x * scaleX;
+          const pdfY = pdfHeight - y * scaleY;
+
+          doc.fontSize(fontSize);
+          doc.font("Helvetica-Bold");
+
+          if (maxWidth) {
+            const scaledWidth = maxWidth * scaleX;
+            doc.text(text, pdfX, pdfY, { width: scaledWidth, ellipsis: true });
+          } else {
+            doc.text(text, pdfX, pdfY);
+          }
+
+          console.log(
+            `Placed "${text}" at PDF coordinates: (${pdfX.toFixed(
+              1
+            )}, ${pdfY.toFixed(1)})`
+          );
+        } catch (textError) {
+          console.error(`Error placing text "${text}":`, textError);
+        }
+      };
+
+      // Helper function to format date in French
+      const formatDateFrench = (dateString) => {
+        if (!dateString) return "";
+        try {
+          const date = new Date(dateString);
+          return date.toLocaleDateString("fr-FR", {
+            day: "2-digit",
+            month: "2-digit",
+            year: "numeric",
+          });
+        } catch {
+          return dateString;
+        }
+      };
+
+      // Helper function to get customer's age
+      const getCustomerAge = (customer) => {
+        if (!customer.dateOfBirth) return "";
+        try {
+          const birthDate = new Date(customer.dateOfBirth);
+          const today = new Date();
+          let age = today.getFullYear() - birthDate.getFullYear();
+          const monthDiff = today.getMonth() - birthDate.getMonth();
+          if (
+            monthDiff < 0 ||
+            (monthDiff === 0 && today.getDate() < birthDate.getDate())
+          ) {
+            age--;
+          }
+          return age.toString();
+        } catch {
+          return "";
+        }
+      };
+
+      // Contract number (in red)
+      doc.fillColor("#ff0000");
+      placeText(bookingData.bookingNumber, 1150, 1900, 14);
+      doc.fillColor("#000000");
+
+      // Customer Information Section (simplified)
+      const customer = bookingData.customer;
+
+      // Nom et Prénom: [350, 1565]
+      const customerName = `${customer.firstName || ""} ${
+        customer.lastName || ""
+      }`;
+      placeText(customerName, 350, 1565, 10);
+
+      // Nationalité: [310, 1506] - Use customer's country or default to Marocaine
+      const nationality =
+        this.getCountryNationality(customer.country) || "Marocaine";
+      placeText(nationality, 310, 1506, 10);
+
+      // Date de Naissance: [412, 1410] - Use dateOfBirth field
+      if (customer.dateOfBirth) {
+        const dob = formatDateFrench(customer.dateOfBirth);
+        placeText(dob, 412, 1450, 10);
       }
+
+      // Passport N°: [310, 1395] - Use passportNumber field
+      if (customer.passportNumber) {
+        placeText(customer.passportNumber, 365, 1395, 10);
+      }
+
+      // Délivré à: [278, 1325] - Use passportIssuedAt field
+      if (customer.passportIssuedAt) {
+        placeText(customer.passportIssuedAt, 350, 1340, 10);
+      }
+
+      // CIN: [300, 1255] - Use cinNumber field
+      if (customer.cinNumber) {
+        placeText(customer.cinNumber, 300, 1285, 10);
+      }
+
+      // Permis de conduite N°: [420, 1185] - Use driverLicenseNumber field
+      if (customer.driverLicenseNumber) {
+        placeText(customer.driverLicenseNumber, 440, 1225, 10);
+      }
+
+      // UPDATED: Adresse: [160, 1115] - Use simplified address field
+      if (customer.address) {
+        // Parse the address to extract city information if possible
+        let addressText = customer.address;
+
+        // For display purposes, we can try to intelligently parse the address
+        // Since it's now a single field, we display it as-is but with formatting consideration
+        const fontSize = addressText.length > 50 ? 8 : 10;
+        placeText(addressText, 160, 1065, fontSize, 400); // Max width of 400 pixels
+      }
+
+      // Numéro de téléphone: [250, 1045] - Enhanced phone formatting
+      if (customer.phone) {
+        // Format phone number for display
+        const formattedPhone = this.formatPhoneNumber(customer.phone);
+        placeText(formattedPhone, 350, 1005, 10);
+      }
+
+      // Vehicle Information Fields (unchanged)
+      const vehicle = bookingData.vehicle;
+
+      // Marque de véhicule: [1160, 1630]
+      const vehicleName = `${vehicle.brand || ""} ${vehicle.name || ""}`;
+      placeText(vehicleName, 1160, 1630, 9);
+
+      // Immatriculation: [1180, 1560]
+      placeText(vehicle.licensePlate || "", 1180, 1560, 9);
+
+      // Date de départ: [1180, 1480]
+      if (bookingData.pickupDate) {
+        const pickupDate = formatDateFrench(bookingData.pickupDate);
+        placeText(pickupDate, 1180, 1480, 9);
+      }
+
+      // Date de retour: [1180, 1410]
+      if (bookingData.returnDate) {
+        const returnDate = formatDateFrench(bookingData.returnDate);
+        placeText(returnDate, 1180, 1410, 9);
+      }
+
+      // Nombre de jours: [1200, 1340]
+      placeText(bookingData.totalDays?.toString() || "0", 1200, 1340, 9);
+
+      // Heure de départ: [1180, 1270]
+      placeText(bookingData.pickupTime || "", 1180, 1270, 9);
+
+      // Heure de retour: [1180, 1130]
+      placeText(bookingData.returnTime || "", 1180, 1130, 9);
+
+      // Montant: [1160, 1060]
+      placeText(`${bookingData.totalAmount || 0} €`, 1180, 1050, 9);
+
+      // Additional information display
+      const hasCompleteDocuments = !!(
+        customer.driverLicenseNumber &&
+        customer.passportNumber &&
+        customer.cinNumber &&
+        customer.dateOfBirth &&
+        customer.address
+      );
 
       console.log(
-        `Placed "${text}" at PDF coordinates: (${pdfX.toFixed(
-          1
-        )}, ${pdfY.toFixed(1)})`
-      );
-    };
-
-    // Helper function to format date in French
-    const formatDateFrench = (dateString) => {
-      if (!dateString) return "";
-      try {
-        const date = new Date(dateString);
-        return date.toLocaleDateString("fr-FR", {
-          day: "2-digit",
-          month: "2-digit",
-          year: "numeric",
-        });
-      } catch {
-        return dateString;
-      }
-    };
-
-    // Helper function to get customer's age
-    const getCustomerAge = (customer) => {
-      if (!customer.dateOfBirth) return "";
-      try {
-        const birthDate = new Date(customer.dateOfBirth);
-        const today = new Date();
-        let age = today.getFullYear() - birthDate.getFullYear();
-        const monthDiff = today.getMonth() - birthDate.getMonth();
-        if (
-          monthDiff < 0 ||
-          (monthDiff === 0 && today.getDate() < birthDate.getDate())
-        ) {
-          age--;
+        "Contract data overlayed with simplified customer structure:",
+        {
+          customerName,
+          nationality,
+          hasDateOfBirth: !!customer.dateOfBirth,
+          hasAddress: !!customer.address,
+          hasDocuments: hasCompleteDocuments,
+          documentCount: [
+            customer.driverLicenseNumber,
+            customer.passportNumber,
+            customer.cinNumber,
+          ].filter(Boolean).length,
         }
-        return age.toString();
-      } catch {
-        return "";
-      }
-    };
-
-    // Contract number (in red)
-    doc.fillColor("#ff0000");
-    placeText(bookingData.bookingNumber, 1150, 1900, 14);
-    doc.fillColor("#000000");
-
-    // Customer Information Section (simplified)
-    const customer = bookingData.customer;
-
-    // Nom et Prénom: [350, 1565]
-    const customerName = `${customer.firstName || ""} ${
-      customer.lastName || ""
-    }`;
-    placeText(customerName, 350, 1565, 10);
-
-    // Nationalité: [310, 1506] - Use customer's country or default to Marocaine
-    const nationality =
-      this.getCountryNationality(customer.country) || "Marocaine";
-    placeText(nationality, 310, 1506, 10);
-
-    // Date de Naissance: [412, 1410] - Use dateOfBirth field
-    if (customer.dateOfBirth) {
-      const dob = formatDateFrench(customer.dateOfBirth);
-      placeText(dob, 412, 1410, 10);
+      );
+    } catch (overlayError) {
+      console.error("Error in overlay process:", overlayError);
+      // Continue processing - don't fail the entire contract
     }
-
-    // Passport N°: [310, 1395] - Use passportNumber field
-    if (customer.passportNumber) {
-      placeText(customer.passportNumber, 310, 1395, 10);
-    }
-
-    // Délivré à: [278, 1325] - Use passportIssuedAt field
-    if (customer.passportIssuedAt) {
-      placeText(customer.passportIssuedAt, 278, 1325, 10);
-    }
-
-    // CIN: [300, 1255] - Use cinNumber field
-    if (customer.cinNumber) {
-      placeText(customer.cinNumber, 300, 1255, 10);
-    }
-
-    // Permis de conduite N°: [420, 1185] - Use driverLicenseNumber field
-    if (customer.driverLicenseNumber) {
-      placeText(customer.driverLicenseNumber, 420, 1185, 10);
-    }
-
-    // UPDATED: Adresse: [160, 1115] - Use simplified address field
-    if (customer.address) {
-      // Parse the address to extract city information if possible
-      let addressText = customer.address;
-
-      // For display purposes, we can try to intelligently parse the address
-      // Since it's now a single field, we display it as-is but with formatting consideration
-      const fontSize = addressText.length > 50 ? 8 : 10;
-      placeText(addressText, 160, 1115, fontSize, 400); // Max width of 400 pixels
-    }
-
-    // Numéro de téléphone: [250, 1045] - Enhanced phone formatting
-    if (customer.phone) {
-      // Format phone number for display
-      const formattedPhone = this.formatPhoneNumber(customer.phone);
-      placeText(formattedPhone, 250, 1045, 10);
-    }
-
-    // Vehicle Information Fields (unchanged)
-    const vehicle = bookingData.vehicle;
-
-    // Marque de véhicule: [1160, 1630]
-    const vehicleName = `${vehicle.brand || ""} ${vehicle.name || ""}`;
-    placeText(vehicleName, 1160, 1630, 9);
-
-    // Immatriculation: [1180, 1560]
-    placeText(vehicle.licensePlate || "", 1180, 1560, 9);
-
-    // Date de départ: [1180, 1480]
-    if (bookingData.pickupDate) {
-      const pickupDate = formatDateFrench(bookingData.pickupDate);
-      placeText(pickupDate, 1180, 1480, 9);
-    }
-
-    // Date de retour: [1180, 1410]
-    if (bookingData.returnDate) {
-      const returnDate = formatDateFrench(bookingData.returnDate);
-      placeText(returnDate, 1180, 1410, 9);
-    }
-
-    // Nombre de jours: [1200, 1340]
-    placeText(bookingData.totalDays?.toString() || "0", 1200, 1340, 9);
-
-    // Heure de départ: [1180, 1270]
-    placeText(bookingData.pickupTime || "", 1180, 1270, 9);
-
-    // Heure de retour: [1180, 1130]
-    placeText(bookingData.returnTime || "", 1180, 1130, 9);
-
-    // Montant: [1160, 1060]
-    placeText(`${bookingData.totalAmount || 0} DH`, 1160, 1060, 9);
-
-    // Additional information display
-    const hasCompleteDocuments = !!(
-      customer.driverLicenseNumber &&
-      customer.passportNumber &&
-      customer.cinNumber &&
-      customer.dateOfBirth &&
-      customer.address
-    );
-
-    console.log("Contract data overlayed with simplified customer structure:", {
-      customerName,
-      nationality,
-      hasDateOfBirth: !!customer.dateOfBirth,
-      hasAddress: !!customer.address,
-      hasDocuments: hasCompleteDocuments,
-      documentCount: [
-        customer.driverLicenseNumber,
-        customer.passportNumber,
-        customer.cinNumber,
-      ].filter(Boolean).length,
-    });
   }
 
   // Helper function to get nationality from country code

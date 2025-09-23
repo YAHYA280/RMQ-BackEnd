@@ -1,4 +1,4 @@
-// src/controllers/bookings/bookingUtilities.js - PART 4: Utility Functions
+// src/controllers/bookings/bookingUtilities.js - FIXED: Contract generation
 const { Booking, Customer, Vehicle, Admin } = require("../../models");
 const { Op } = require("sequelize");
 const asyncHandler = require("../../middleware/asyncHandler");
@@ -9,57 +9,89 @@ const ContractGenerator = require("../../services/contractGenerator");
 // @route   GET /api/bookings/:id/contract
 // @access  Private (admin)
 exports.generateContract = asyncHandler(async (req, res, next) => {
-  const booking = await Booking.findByPk(req.params.id, {
-    include: [
-      {
-        model: Customer,
-        as: "customer",
-        attributes: [
-          "id",
-          "firstName",
-          "lastName",
-          "phone",
-          "email",
-          "dateOfBirth",
-          "address",
-          "city",
-          "country",
-          "driverLicenseNumber",
-        ],
-      },
-      {
-        model: Vehicle,
-        as: "vehicle",
-        attributes: [
-          "id",
-          "name",
-          "brand",
-          "year",
-          "licensePlate",
-          "price",
-          "mileage",
-        ],
-      },
-    ],
-  });
-
-  if (!booking) {
-    return next(new ErrorResponse("Booking not found", 404));
-  }
-
-  // Only generate contract for confirmed or active bookings
-  if (!["confirmed", "active"].includes(booking.status)) {
-    return next(
-      new ErrorResponse(
-        "Contract can only be generated for confirmed or active bookings",
-        400
-      )
-    );
-  }
+  console.log(`Starting contract generation for booking ID: ${req.params.id}`);
 
   try {
+    // FIXED: More specific attribute selection to avoid SQL conflicts
+    const booking = await Booking.findByPk(req.params.id, {
+      include: [
+        {
+          model: Customer,
+          as: "customer",
+          attributes: [
+            "id",
+            "firstName",
+            "lastName",
+            "phone",
+            "email",
+            "dateOfBirth",
+            "address", // Single address field
+            "country",
+            "driverLicenseNumber",
+            "passportNumber",
+            "passportIssuedAt",
+            "cinNumber",
+          ],
+        },
+        {
+          model: Vehicle,
+          as: "vehicle",
+          attributes: [
+            "id",
+            "name",
+            "brand",
+            "year",
+            "licensePlate",
+            "price",
+            "mileage",
+          ],
+        },
+      ],
+    });
+
+    if (!booking) {
+      console.log(`Booking not found for ID: ${req.params.id}`);
+      return next(new ErrorResponse("Booking not found", 404));
+    }
+
+    console.log(
+      `Found booking: ${booking.bookingNumber}, status: ${booking.status}`
+    );
+
+    // Only generate contract for confirmed or active bookings
+    if (!["confirmed", "active"].includes(booking.status)) {
+      console.log(`Invalid booking status for contract: ${booking.status}`);
+      return next(
+        new ErrorResponse(
+          "Contract can only be generated for confirmed or active bookings",
+          400
+        )
+      );
+    }
+
+    // Check if customer data is sufficient for contract
+    if (!booking.customer) {
+      console.log("No customer data found for booking");
+      return next(new ErrorResponse("Customer data not found", 400));
+    }
+
+    if (!booking.vehicle) {
+      console.log("No vehicle data found for booking");
+      return next(new ErrorResponse("Vehicle data not found", 400));
+    }
+
+    console.log(
+      `Customer: ${booking.customer.firstName} ${booking.customer.lastName}`
+    );
+    console.log(`Vehicle: ${booking.vehicle.brand} ${booking.vehicle.name}`);
+
+    // Generate the contract
     const contractGenerator = new ContractGenerator();
+    console.log("Generating PDF contract...");
+
     const pdfBuffer = await contractGenerator.generateContract(booking);
+
+    console.log(`PDF generated successfully, size: ${pdfBuffer.length} bytes`);
 
     // Set response headers for PDF download
     res.set({
@@ -71,10 +103,27 @@ exports.generateContract = asyncHandler(async (req, res, next) => {
       Expires: "0",
     });
 
+    console.log(`Sending PDF contract for booking ${booking.bookingNumber}`);
     res.send(pdfBuffer);
   } catch (error) {
     console.error("Contract generation error:", error);
-    return next(new ErrorResponse("Failed to generate contract", 500));
+    console.error("Error stack:", error.stack);
+
+    // More specific error handling
+    if (error.name === "SequelizeDatabaseError") {
+      console.error(
+        "Database error during contract generation:",
+        error.message
+      );
+      return next(
+        new ErrorResponse("Database error during contract generation", 500)
+      );
+    } else if (error.message && error.message.includes("Template")) {
+      console.error("Template error:", error.message);
+      return next(new ErrorResponse("Contract template error", 500));
+    } else {
+      return next(new ErrorResponse("Failed to generate contract", 500));
+    }
   }
 });
 
