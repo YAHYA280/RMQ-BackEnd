@@ -306,12 +306,20 @@ exports.validateCustomer = [
     .withMessage("Veuillez saisir un email valide")
     .normalizeEmail(),
 
-  // Phone validation with proper Moroccan format
+  // Phone validation
   body("phone")
-    .matches(/^0[67]\d{8}$/)
+    .matches(/^\+\d{10,15}$/)
     .withMessage(
-      "Veuillez saisir un numéro de téléphone marocain valide (06XXXXXXXX ou 07XXXXXXXX)"
-    ),
+      "Veuillez saisir un numéro de téléphone international valide (ex: +212612345678)"
+    )
+    .custom((value) => {
+      if (value.length < 10 || value.length > 16) {
+        throw new Error(
+          "Le numéro de téléphone doit contenir entre 10 et 16 caractères"
+        );
+      }
+      return true;
+    }),
 
   // Date of birth validation
   body("dateOfBirth")
@@ -407,11 +415,18 @@ exports.validateCustomerUpdate = [
 
   // Phone validation with proper Moroccan format
   body("phone")
-    .optional()
-    .matches(/^0[67]\d{8}$/)
+    .matches(/^\+\d{10,15}$/)
     .withMessage(
-      "Veuillez saisir un numéro de téléphone marocain valide (06XXXXXXXX ou 07XXXXXXXX)"
-    ),
+      "Veuillez saisir un numéro de téléphone international valide (ex: +212612345678)"
+    )
+    .custom((value) => {
+      if (value.length < 10 || value.length > 16) {
+        throw new Error(
+          "Le numéro de téléphone doit contenir entre 10 et 16 caractères"
+        );
+      }
+      return true;
+    }),
 
   // Date of birth validation for updates
   body("dateOfBirth")
@@ -646,7 +661,6 @@ exports.validateWebsiteBooking = [
       "Veuillez saisir un numéro de téléphone international valide (ex: +212612345678)"
     )
     .custom((value) => {
-      // Additional validation to ensure it's a valid international format
       if (value.length < 10 || value.length > 16) {
         throw new Error(
           "Le numéro de téléphone doit contenir entre 10 et 16 caractères"
