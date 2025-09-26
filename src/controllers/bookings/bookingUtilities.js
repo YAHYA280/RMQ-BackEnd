@@ -1,6 +1,6 @@
-// src/controllers/bookings/bookingUtilities.js - FIXED: Contract generation
+// src/controllers/bookings/bookingUtilities.js - FIXED: Complete stats function
 const { Booking, Customer, Vehicle, Admin } = require("../../models");
-const { Op } = require("sequelize");
+const { Op, Sequelize } = require("sequelize"); // FIXED: Added Sequelize import
 const asyncHandler = require("../../middleware/asyncHandler");
 const ErrorResponse = require("../../utils/errorResponse");
 const ContractGenerator = require("../../services/contractGenerator");
@@ -127,51 +127,260 @@ exports.generateContract = asyncHandler(async (req, res, next) => {
   }
 });
 
+// FIXED: Complete booking statistics function
 // @desc    Get booking statistics
 // @route   GET /api/bookings/stats
 // @access  Private (admin)
 exports.getBookingStats = asyncHandler(async (req, res, next) => {
-  const { sequelize } = require("../../config/database");
+  try {
+    console.log("📊 Getting booking statistics...");
 
-  const stats = await Booking.findAll({
-    attributes: [
-      [sequelize.fn("COUNT", sequelize.col("id")), "totalBookings"],
-      [
-        sequelize.fn(
-          "COUNT",
-          sequelize.literal("CASE WHEN status = 'pending' THEN 1 END")
-        ),
-        "pendingBookings",
+    // Get all bookings for detailed statistics
+    const allBookings = await Booking.findAll({
+      attributes: [
+        "id",
+        "status",
+        "dailyRate",
+        "totalDays",
+        "totalAmount",
+        "createdAt",
+        "updatedAt",
       ],
-      [
-        sequelize.fn(
-          "COUNT",
-          sequelize.literal("CASE WHEN status = 'active' THEN 1 END")
-        ),
-        "activeBookings",
+      raw: true,
+    });
+
+    console.log(
+      `📊 Found ${allBookings.length} bookings for stats calculation`
+    );
+
+    // Initialize stats
+    const stats = {
+      totalBookings: allBookings.length,
+      pendingBookings: 0,
+      confirmedBookings: 0,
+      activeBookings: 0,
+      completedBookings: 0,
+      cancelledBookings: 0,
+      totalRevenue: 0,
+      averageBookingValue: 0,
+      monthlyRevenue: 0,
+    };
+
+    // Current month/year for monthly revenue
+    const currentDate = new Date();
+    const currentMonth = currentDate.getMonth();
+    const currentYear = currentDate.getFullYear();
+
+    let totalRevenue = 0;
+    let monthlyRevenue = 0;
+    let completedBookingsCount = 0;
+
+    // Process each booking
+    allBookings.forEach((booking) => {
+      // Count by status
+      switch (booking.status) {
+        case "pending":
+          stats.pendingBookings++;
+          break;
+        case "confirmed":
+          stats.confirmedBookings++;
+          break;
+        case "active":
+          stats.activeBookings++;
+          break;
+        case "completed":
+          stats.completedBookings++;
+          completedBookingsCount++;
+          break;
+        case "cancelled":
+          stats.cancelledBookings++;
+          break;
+      }
+
+      // Calculate revenue with fallbacks
+      let bookingAmount = 0;
+
+      // Try totalAmount first
+      if (booking.totalAmount && !isNaN(booking.totalAmount)) {
+        bookingAmount = parseFloat(booking.totalAmount);
+      }
+      // Fallback: calculate from dailyRate * totalDays
+      else if (
+        booking.dailyRate &&
+        booking.totalDays &&
+        !isNaN(booking.dailyRate) &&
+        !isNaN(booking.totalDays)
+      ) {
+        bookingAmount =
+          parseFloat(booking.dailyRate) * parseInt(booking.totalDays);
+        console.log(
+          `📊 Calculated amount for booking ${booking.id}: ${bookingAmount}`
+        );
+      }
+      // Last resort: use dailyRate
+      else if (booking.dailyRate && !isNaN(booking.dailyRate)) {
+        bookingAmount = parseFloat(booking.dailyRate);
+      }
+
+      // Only count revenue for completed bookings
+      if (booking.status === "completed" && bookingAmount > 0) {
+        totalRevenue += bookingAmount;
+
+        // Check if booking is from current month
+        const bookingDate = new Date(booking.createdAt);
+        if (
+          bookingDate.getMonth() === currentMonth &&
+          bookingDate.getFullYear() === currentYear
+        ) {
+          monthlyRevenue += bookingAmount;
+        }
+      }
+    });
+
+    // Final calculations
+    stats.totalRevenue = Math.round(totalRevenue * 100) / 100;
+    stats.monthlyRevenue = Math.round(monthlyRevenue * 100) / 100;
+    stats.averageBookingValue =
+      completedBookingsCount > 0
+        ? Math.round((totalRevenue / completedBookingsCount) * 100) / 100
+        : 0;
+
+    console.log("📊 Final stats calculated:", {
+      totalBookings: stats.totalBookings,
+      pendingBookings: stats.pendingBookings,
+      confirmedBookings: stats.confirmedBookings,
+      activeBookings: stats.activeBookings,
+      completedBookings: stats.completedBookings,
+      cancelledBookings: stats.cancelledBookings,
+      totalRevenue: stats.totalRevenue,
+      averageBookingValue: stats.averageBookingValue,
+      monthlyRevenue: stats.monthlyRevenue,
+    });
+
+    res.status(200).json({
+      success: true,
+      message: "Booking statistics retrieved successfully",
+      data: stats,
+    });
+  } catch (error) {
+    console.error("❌ Error in getBookingStats:", error);
+
+    // Return safe fallback stats
+    const fallbackStats = {
+      totalBookings: 0,
+      pendingBookings: 0,
+      confirmedBookings: 0,
+      activeBookings: 0,
+      completedBookings: 0,
+      cancelledBookings: 0,
+      totalRevenue: 0,
+      averageBookingValue: 0,
+      monthlyRevenue: 0,
+    };
+
+    // Try to get at least basic counts if possible
+    try {
+      const basicCount = await Booking.count();
+      fallbackStats.totalBookings = basicCount;
+
+      console.log("📊 Using fallback stats with basic count:", fallbackStats);
+    } catch (fallbackError) {
+      console.error("❌ Even basic count failed:", fallbackError);
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Booking statistics retrieved with fallback data",
+      data: fallbackStats,
+      warning: "Some statistics may be incomplete due to data issues",
+    });
+  }
+});
+
+// NEW: Debug stats endpoint for troubleshooting
+exports.getBookingStatsDebug = asyncHandler(async (req, res, next) => {
+  try {
+    console.log(
+      "🔍 DEBUG: Getting booking statistics with detailed logging..."
+    );
+
+    // Get sample booking to check structure
+    const sampleBooking = await Booking.findOne({
+      limit: 1,
+      raw: true,
+    });
+
+    console.log("🔍 DEBUG: Sample booking structure:", sampleBooking);
+
+    // Get all bookings with key fields
+    const allBookings = await Booking.findAll({
+      attributes: [
+        "id",
+        "status",
+        "dailyRate",
+        "totalDays",
+        "totalAmount",
+        "createdAt",
       ],
-      [sequelize.fn("SUM", sequelize.col("totalAmount")), "totalRevenue"],
-    ],
-    raw: true,
-  });
+      limit: 10, // Limit for debugging
+      raw: true,
+    });
 
-  // Convert strings to numbers and handle null values
-  const result = stats[0];
-  const transformedStats = {
-    totalBookings: parseInt(result.totalBookings) || 0,
-    pendingBookings: parseInt(result.pendingBookings) || 0,
-    activeBookings: parseInt(result.activeBookings) || 0,
-    totalRevenue: parseFloat(result.totalRevenue) || 0,
-  };
+    console.log("🔍 DEBUG: Sample bookings data:", allBookings);
 
-  console.log("Booking stats result:", transformedStats); // Debug log
+    // Get status counts
+    const statusCounts = await Booking.findAll({
+      attributes: [
+        "status",
+        [Sequelize.fn("COUNT", Sequelize.col("status")), "count"],
+      ],
+      group: ["status"],
+      raw: true,
+    });
 
-  res.status(200).json({
-    success: true,
-    data: {
-      overview: transformedStats,
-    },
-  });
+    console.log("🔍 DEBUG: Status counts:", statusCounts);
+
+    // Try to get revenue data
+    let revenueQuery = null;
+    try {
+      revenueQuery = await Booking.findAll({
+        attributes: [
+          [Sequelize.fn("SUM", Sequelize.col("totalAmount")), "total"],
+          [Sequelize.fn("AVG", Sequelize.col("totalAmount")), "average"],
+          [Sequelize.fn("COUNT", Sequelize.col("id")), "count"],
+        ],
+        where: {
+          status: "completed",
+          totalAmount: {
+            [Op.not]: null,
+          },
+        },
+        raw: true,
+      });
+      console.log("🔍 DEBUG: Revenue query result:", revenueQuery);
+    } catch (revenueError) {
+      console.log("🔍 DEBUG: Revenue query failed:", revenueError.message);
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Debug information retrieved",
+      data: {
+        sampleBooking,
+        sampleBookings: allBookings,
+        statusCounts,
+        revenueQuery,
+        tableInfo: "Check console for detailed structure",
+      },
+    });
+  } catch (error) {
+    console.error("❌ Error in debug stats:", error);
+    res.status(500).json({
+      success: false,
+      message: "Debug stats failed",
+      error: error.message,
+    });
+  }
 });
 
 // @desc    Check vehicle availability

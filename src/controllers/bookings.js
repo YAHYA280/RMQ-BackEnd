@@ -1,4 +1,4 @@
-// src/controllers/bookings.js - PART 1: Basic CRUD Operations
+// src/controllers/bookings.js - UPDATED: Export debug function
 const { Booking, Customer, Vehicle, Admin } = require("../models");
 const { validationResult } = require("express-validator");
 const { Op } = require("sequelize");
@@ -22,6 +22,7 @@ const {
 const {
   generateContract,
   getBookingStats,
+  getBookingStatsDebug, // NEW: Import debug function
   checkAvailability,
   getCustomerBookings,
   getVehicleCalendar,
@@ -169,7 +170,6 @@ exports.getBooking = asyncHandler(async (req, res, next) => {
           "driverLicenseImageName",
           "dateOfBirth",
           "address",
-          "city",
           "country",
           "driverLicenseNumber",
         ],
@@ -333,6 +333,7 @@ exports.pickupVehicle = pickupVehicle;
 exports.returnVehicle = returnVehicle;
 exports.generateContract = generateContract;
 exports.getBookingStats = getBookingStats;
+exports.getBookingStatsDebug = getBookingStatsDebug;
 exports.checkAvailability = checkAvailability;
 exports.getCustomerBookings = getCustomerBookings;
 exports.getVehicleCalendar = getVehicleCalendar;
