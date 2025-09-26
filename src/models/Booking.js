@@ -1,9 +1,11 @@
-// src/models/Booking.js - FIXED: Customer attributes and association includes
+// src/models/Booking.js - UPDATED: Minimum 2 days + same-day booking logic
 const { DataTypes } = require("sequelize");
 const { sequelize } = require("../config/database");
 const {
   calculateRentalDaysWithTimeLogic,
   getTimeExcessInfo,
+  validateSameDayBooking,
+  checkAdvancedAvailability,
 } = require("../utils/bookingUtils");
 
 const Booking = sequelize.define(
@@ -52,6 +54,16 @@ const Booking = sequelize.define(
           if (value <= this.pickupDate) {
             throw new Error("Return date must be after pickup date");
           }
+
+          // UPDATED: Validate minimum 2 days
+          const pickup = new Date(this.pickupDate);
+          const returnD = new Date(value);
+          const diffTime = Math.abs(returnD.getTime() - pickup.getTime());
+          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+          if (diffDays < 2) {
+            throw new Error("Minimum rental period is 2 days");
+          }
         },
       },
     },
@@ -90,7 +102,7 @@ const Booking = sequelize.define(
       type: DataTypes.INTEGER,
       allowNull: false,
       validate: {
-        min: 1,
+        min: 2, // UPDATED: Minimum 2 days
       },
     },
     totalAmount: {
@@ -214,7 +226,7 @@ const Booking = sequelize.define(
 
 // Instance methods
 
-// Calculate rental days with time logic
+// UPDATED: Calculate rental days with time logic (minimum 2 days)
 Booking.prototype.calculateRentalDays = function () {
   if (
     !this.pickupDate ||
@@ -222,78 +234,30 @@ Booking.prototype.calculateRentalDays = function () {
     !this.pickupTime ||
     !this.returnTime
   ) {
-    return 0;
+    return 2; // UPDATED: Return minimum 2 days if data missing
   }
 
-  // Calculate basic day difference
-  const pickupDate = new Date(this.pickupDate);
-  const returnDate = new Date(this.returnDate);
-  const basicDays = Math.ceil(
-    (returnDate.getTime() - pickupDate.getTime()) / (1000 * 60 * 60 * 24)
+  // Use the utility function with minimum 2 days
+  return calculateRentalDaysWithTimeLogic(
+    this.pickupDate,
+    this.returnDate,
+    this.pickupTime,
+    this.returnTime
   );
-
-  // Convert times to minutes for easier comparison
-  const [pickupHour, pickupMin] = this.pickupTime.split(":").map(Number);
-  const [returnHour, returnMin] = this.returnTime.split(":").map(Number);
-
-  const pickupMinutes = pickupHour * 60 + pickupMin;
-  const returnMinutes = returnHour * 60 + returnMin;
-
-  // Your logic: if return time is more than 1 hour after pickup time, add 1 day
-  const timeDifference = returnMinutes - pickupMinutes;
-  const oneHourInMinutes = 60;
-
-  let rentalDays = basicDays;
-
-  // If return time exceeds pickup time by more than 1 hour, add extra day
-  if (timeDifference > oneHourInMinutes) {
-    rentalDays += 1;
-  }
-
-  return Math.max(1, rentalDays);
 };
 
 // Get time difference info for display
 Booking.prototype.getTimeExcessInfo = function () {
-  if (!this.pickupTime || !this.returnTime) {
-    return null;
-  }
-
-  const [pickupHour, pickupMin] = this.pickupTime.split(":").map(Number);
-  const [returnHour, returnMin] = this.returnTime.split(":").map(Number);
-
-  const pickupMinutes = pickupHour * 60 + pickupMin;
-  const returnMinutes = returnHour * 60 + returnMin;
-
-  const timeDifference = returnMinutes - pickupMinutes;
-  const oneHourInMinutes = 60;
-
-  if (timeDifference > oneHourInMinutes) {
-    const excessMinutes = timeDifference - oneHourInMinutes;
-    const excessHours = Math.floor(excessMinutes / 60);
-    const remainingMinutes = excessMinutes % 60;
-
-    return {
-      hasExcess: true,
-      excessHours,
-      excessMinutes: remainingMinutes,
-      totalExcessMinutes: excessMinutes,
-      message: `Return time exceeds pickup time by ${excessHours}h ${remainingMinutes}m (1 day grace period exceeded)`,
-    };
-  }
-
-  return {
-    hasExcess: false,
-    message: "Within 1-hour grace period",
-  };
+  return getTimeExcessInfo(this.pickupTime, this.returnTime);
 };
 
-// LEGACY: Original duration method (kept for backward compatibility)
+// LEGACY: Original duration method (kept for backward compatibility, minimum 2 days)
 Booking.prototype.getDuration = function () {
   const pickup = new Date(this.pickupDate);
   const returnDate = new Date(this.returnDate);
   const diffTime = Math.abs(returnDate - pickup);
-  return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  const days = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  return Math.max(2, days); // UPDATED: Minimum 2 days
 };
 
 Booking.prototype.isOverdue = function () {
@@ -330,7 +294,33 @@ Booking.prototype.getFormattedTimes = function () {
   };
 };
 
-// FIXED: Define default customer attributes to include (simplified to match your new structure)
+// NEW: Check if this booking conflicts with another booking using same-day logic
+Booking.prototype.conflictsWith = function (otherBooking) {
+  // Skip if same booking
+  if (this.id === otherBooking.id) return false;
+
+  // Skip if either booking is cancelled
+  if (this.status === "cancelled" || otherBooking.status === "cancelled") {
+    return false;
+  }
+
+  // Different vehicles = no conflict
+  if (this.vehicleId !== otherBooking.vehicleId) return false;
+
+  // Use advanced availability check
+  const availabilityCheck = checkAdvancedAvailability(
+    [otherBooking],
+    this.pickupDate,
+    this.returnDate,
+    this.pickupTime,
+    this.returnTime,
+    this.id
+  );
+
+  return !availabilityCheck.isAvailable;
+};
+
+// Define default customer attributes to include (simplified to match your new structure)
 Booking.getCustomerAttributes = function () {
   return [
     "id",
@@ -355,7 +345,7 @@ Booking.getVehicleAttributes = function () {
 
 // Class methods
 
-// FIXED: Class method for generating booking numbers like BK001, BK002, etc.
+// Class method for generating booking numbers like BK001, BK002, etc.
 Booking.generateBookingNumber = async function () {
   let bookingNumber;
   let isUnique = false;
@@ -403,44 +393,135 @@ Booking.generateBookingNumber = async function () {
   return bookingNumber;
 };
 
+// UPDATED: Enhanced vehicle availability check with same-day logic
 Booking.checkVehicleAvailability = async function (
   vehicleId,
   pickupDate,
   returnDate,
-  excludeBookingId = null
+  excludeBookingId = null,
+  pickupTime = null,
+  returnTime = null
 ) {
   const whereClause = {
     vehicleId,
     status: ["confirmed", "active"],
-    [require("sequelize").Op.or]: [
-      {
-        pickupDate: {
-          [require("sequelize").Op.between]: [pickupDate, returnDate],
-        },
-      },
-      {
-        returnDate: {
-          [require("sequelize").Op.between]: [pickupDate, returnDate],
-        },
-      },
-      {
-        [require("sequelize").Op.and]: [
-          { pickupDate: { [require("sequelize").Op.lte]: pickupDate } },
-          { returnDate: { [require("sequelize").Op.gte]: returnDate } },
-        ],
-      },
-    ],
   };
 
   if (excludeBookingId) {
     whereClause.id = { [require("sequelize").Op.ne]: excludeBookingId };
   }
 
-  const conflictingBookings = await Booking.findAll({
+  const existingBookings = await Booking.findAll({
     where: whereClause,
   });
 
-  return conflictingBookings.length === 0;
+  // If no times provided, use basic date overlap check
+  if (!pickupTime || !returnTime) {
+    const conflictingBookings = existingBookings.filter((booking) => {
+      const bookingStart = new Date(booking.pickupDate);
+      const bookingEnd = new Date(booking.returnDate);
+      const newStart = new Date(pickupDate);
+      const newEnd = new Date(returnDate);
+
+      return !(newEnd < bookingStart || newStart > bookingEnd);
+    });
+
+    return conflictingBookings.length === 0;
+  }
+
+  // Use advanced availability check with same-day logic
+  const availabilityCheck = checkAdvancedAvailability(
+    existingBookings,
+    pickupDate,
+    returnDate,
+    pickupTime,
+    returnTime,
+    excludeBookingId
+  );
+
+  return availabilityCheck.isAvailable;
+};
+
+// NEW: Get detailed availability info for a vehicle
+Booking.getVehicleAvailabilityDetails = async function (
+  vehicleId,
+  pickupDate,
+  returnDate,
+  pickupTime = null,
+  returnTime = null,
+  excludeBookingId = null
+) {
+  const existingBookings = await Booking.findAll({
+    where: {
+      vehicleId,
+      status: ["confirmed", "active"],
+      ...(excludeBookingId && {
+        id: { [require("sequelize").Op.ne]: excludeBookingId },
+      }),
+    },
+    include: [
+      {
+        model: require("./Customer"),
+        as: "customer",
+        attributes: ["firstName", "lastName"],
+      },
+    ],
+  });
+
+  if (!pickupTime || !returnTime) {
+    // Basic availability check
+    const conflicts = existingBookings.filter((booking) => {
+      const bookingStart = new Date(booking.pickupDate);
+      const bookingEnd = new Date(booking.returnDate);
+      const newStart = new Date(pickupDate);
+      const newEnd = new Date(returnDate);
+
+      return !(newEnd < bookingStart || newStart > bookingEnd);
+    });
+
+    return {
+      isAvailable: conflicts.length === 0,
+      conflictingBookings: conflicts,
+      sameDayConflicts: [],
+      message:
+        conflicts.length === 0
+          ? "Vehicle is available for selected dates"
+          : `Vehicle has ${conflicts.length} conflicting booking(s)`,
+    };
+  }
+
+  // Advanced availability check
+  const availabilityCheck = checkAdvancedAvailability(
+    existingBookings,
+    pickupDate,
+    returnDate,
+    pickupTime,
+    returnTime,
+    excludeBookingId
+  );
+
+  let message = "";
+  if (availabilityCheck.isAvailable) {
+    message = "Vehicle is available for selected dates and times";
+  } else {
+    const conflictTypes = [];
+    if (availabilityCheck.details.hasDateConflicts) {
+      conflictTypes.push(
+        `${availabilityCheck.conflictingBookings.length} date conflict(s)`
+      );
+    }
+    if (availabilityCheck.details.hasSameDayConflicts) {
+      conflictTypes.push(
+        `${availabilityCheck.sameDayConflicts.length} same-day time conflict(s)`
+      );
+    }
+    message = `Vehicle not available: ${conflictTypes.join(", ")}`;
+  }
+
+  return {
+    ...availabilityCheck,
+    message,
+  };
 };
 
 Booking.getBookingStats = async function () {
