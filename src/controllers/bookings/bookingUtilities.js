@@ -58,12 +58,12 @@ exports.generateContract = asyncHandler(async (req, res, next) => {
       `Found booking: ${booking.bookingNumber}, status: ${booking.status}`
     );
 
-    // Only generate contract for confirmed or active bookings
-    if (!["confirmed", "active"].includes(booking.status)) {
+    // UPDATED: Allow contract generation for confirmed, active, AND completed bookings
+    if (!["confirmed", "active", "completed"].includes(booking.status)) {
       console.log(`Invalid booking status for contract: ${booking.status}`);
       return next(
         new ErrorResponse(
-          "Contract can only be generated for confirmed or active bookings",
+          "Contract can only be generated for confirmed, active, or completed bookings",
           400
         )
       );
