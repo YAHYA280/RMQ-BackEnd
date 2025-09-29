@@ -627,10 +627,22 @@ exports.getVehicleCalendar = asyncHandler(async (req, res, next) => {
 
   // Calculate next available date
   let nextAvailableDate = null;
+  let nextAvailableTime = null;
   if (currentBooking) {
     const returnDate = new Date(currentBooking.returnDate);
-    returnDate.setDate(returnDate.getDate() + 1);
-    nextAvailableDate = returnDate.toISOString().split("T")[0];
+    const returnTime = currentBooking.returnTime || "23:59";
+
+    // If return time is before 23:00, vehicle is available same day after return time
+    const [returnHour, returnMin] = returnTime.split(":").map(Number);
+    if (returnHour < 23) {
+      nextAvailableDate = currentBooking.returnDate;
+      nextAvailableTime = returnTime;
+    } else {
+      // Otherwise available next day at 08:00
+      returnDate.setDate(returnDate.getDate() + 1);
+      nextAvailableDate = returnDate.toISOString().split("T")[0];
+      nextAvailableTime = "08:00";
+    }
   }
 
   console.log("Current booking:", currentBooking);

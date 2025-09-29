@@ -7,51 +7,55 @@
  * @param {string} returnTime - Time in HH:MM format
  * @returns {number} Number of rental days (minimum 2)
  */
-const calculateRentalDaysWithTimeLogic = (
+function calculateRentalDaysWithTimeLogic(
   pickupDate,
   returnDate,
   pickupTime,
   returnTime
-) => {
+) {
   try {
-    // Calculate basic day difference
-    const pickupDateObj = new Date(pickupDate);
-    const returnDateObj = new Date(returnDate);
-    const basicDays = Math.ceil(
-      (returnDateObj.getTime() - pickupDateObj.getTime()) /
-        (1000 * 60 * 60 * 24)
-    );
-
-    // Convert times to minutes for easier comparison
-    const [pickupHour, pickupMin] = pickupTime.split(":").map(Number);
-    const [returnHour, returnMin] = returnTime.split(":").map(Number);
-
-    const pickupMinutes = pickupHour * 60 + pickupMin;
-    const returnMinutes = returnHour * 60 + returnMin;
-
-    // Your logic: if return time is more than 1 hour after pickup time, add 1 day
-    const timeDifference = returnMinutes - pickupMinutes;
-    const oneHourInMinutes = 60;
-
-    let rentalDays = basicDays;
-
-    // If return time exceeds pickup time by more than 1 hour, add extra day
-    if (timeDifference > oneHourInMinutes) {
-      rentalDays += 1;
-    }
-
-    // UPDATED: Minimum 2 days instead of 1
-    return Math.max(2, rentalDays);
-  } catch (error) {
-    console.error("Error calculating rental days:", error);
-    // Fallback to basic calculation with minimum 2 days
     const pickup = new Date(pickupDate);
     const returnD = new Date(returnDate);
+
+    // Basic day calculation
     const diffTime = Math.abs(returnD.getTime() - pickup.getTime());
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    return Math.max(2, diffDays); // UPDATED: Minimum 2 days
+    let diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+    // If same day, calculate based on hours
+    if (diffDays === 0 && pickupTime && returnTime) {
+      const [pickupHour, pickupMin] = pickupTime.split(":").map(Number);
+      const [returnHour, returnMin] = returnTime.split(":").map(Number);
+
+      const pickupMinutes = pickupHour * 60 + pickupMin;
+      const returnMinutes = returnHour * 60 + returnMin;
+      const hoursDiff = (returnMinutes - pickupMinutes) / 60;
+
+      // If less than 4 hours, charge minimum 1 day
+      // If more than 4 hours, still 1 day
+      return 1;
+    }
+
+    // For multi-day rentals, apply time logic
+    if (pickupTime && returnTime && diffDays > 0) {
+      const [pickupHour, pickupMin] = pickupTime.split(":").map(Number);
+      const [returnHour, returnMin] = returnTime.split(":").map(Number);
+
+      const timeDifference =
+        returnHour * 60 + returnMin - (pickupHour * 60 + pickupMin);
+
+      // If return time is significantly later than pickup time, add extra day
+      if (timeDifference > 60) {
+        // More than 1 hour later
+        diffDays += 1;
+      }
+    }
+
+    return Math.max(1, diffDays); // Minimum 1 day
+  } catch (error) {
+    console.error("Error calculating rental days:", error);
+    return 1; // Fallback to minimum
   }
-};
+}
 
 /**
  * Get time difference info for display

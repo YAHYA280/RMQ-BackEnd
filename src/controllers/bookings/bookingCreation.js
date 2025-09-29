@@ -104,7 +104,7 @@ exports.createWebsiteBooking = asyncHandler(async (req, res, next) => {
     );
 
     // UPDATED: Validate that we have at least 2 days
-    if (totalDays < 2) {
+    if (totalDays < 1) {
       return next(new ErrorResponse("Minimum rental period is 2 days", 400));
     }
 

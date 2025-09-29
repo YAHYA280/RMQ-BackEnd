@@ -4,7 +4,6 @@ const { sequelize } = require("../config/database");
 const {
   calculateRentalDaysWithTimeLogic,
   getTimeExcessInfo,
-  validateSameDayBooking,
   checkAdvancedAvailability,
 } = require("../utils/bookingUtils");
 
@@ -55,13 +54,13 @@ const Booking = sequelize.define(
             throw new Error("Return date must be after pickup date");
           }
 
-          // UPDATED: Validate minimum 2 days
+          // UPDATED: Validate minimum 1 days
           const pickup = new Date(this.pickupDate);
           const returnD = new Date(value);
           const diffTime = Math.abs(returnD.getTime() - pickup.getTime());
           const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
-          if (diffDays < 2) {
+          if (diffDays < 1) {
             throw new Error("Minimum rental period is 2 days");
           }
         },
@@ -226,7 +225,7 @@ const Booking = sequelize.define(
 
 // Instance methods
 
-// UPDATED: Calculate rental days with time logic (minimum 2 days)
+// UPDATED: Calculate rental days with time logic (minimum 1 days)
 Booking.prototype.calculateRentalDays = function () {
   if (
     !this.pickupDate ||
@@ -234,7 +233,7 @@ Booking.prototype.calculateRentalDays = function () {
     !this.pickupTime ||
     !this.returnTime
   ) {
-    return 2; // UPDATED: Return minimum 2 days if data missing
+    return 1;
   }
 
   // Use the utility function with minimum 2 days
