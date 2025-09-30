@@ -551,7 +551,15 @@ exports.getVehicleCalendar = asyncHandler(async (req, res, next) => {
         },
       ],
     },
-    attributes: ["id", "bookingNumber", "pickupDate", "returnDate", "status"],
+    attributes: [
+      "id",
+      "bookingNumber",
+      "pickupDate",
+      "returnDate",
+      "pickupTime", // ✅ ADD THIS
+      "returnTime", // ✅ ADD THIS
+      "status",
+    ],
     include: [
       {
         model: Customer,
@@ -587,6 +595,8 @@ exports.getVehicleCalendar = asyncHandler(async (req, res, next) => {
       bookingNumber: booking.bookingNumber,
       pickupDate: booking.pickupDate,
       returnDate: booking.returnDate,
+      pickupTime: booking.pickupTime,
+      returnTime: booking.returnTime,
       status: booking.status,
       customerName: booking.customer
         ? `${booking.customer.firstName} ${booking.customer.lastName}`
@@ -625,25 +635,41 @@ exports.getVehicleCalendar = asyncHandler(async (req, res, next) => {
   // Determine if currently available
   const isCurrentlyAvailable = !currentBooking;
 
-  // Calculate next available date
+  // Calculate next available date and time
   let nextAvailableDate = null;
   let nextAvailableTime = null;
+
   if (currentBooking) {
     const returnDate = new Date(currentBooking.returnDate);
     const returnTime = currentBooking.returnTime || "23:59";
 
-    // If return time is before 23:00, vehicle is available same day after return time
+    console.log("🔍 Current booking return:", {
+      returnDate: currentBooking.returnDate,
+      returnTime: returnTime,
+    });
+
+    // Parse return time
     const [returnHour, returnMin] = returnTime.split(":").map(Number);
-    if (returnHour < 23) {
+    const formattedTime = `${String(returnHour).padStart(2, "0")}:${String(
+      returnMin
+    ).padStart(2, "0")}`;
+
+    if (returnHour < 20) {
       nextAvailableDate = currentBooking.returnDate;
-      nextAvailableTime = returnTime;
+      nextAvailableTime = formattedTime;
     } else {
-      // Otherwise available next day at 08:00
       returnDate.setDate(returnDate.getDate() + 1);
       nextAvailableDate = returnDate.toISOString().split("T")[0];
-      nextAvailableTime = "08:00";
+      nextAvailableTime = formattedTime;
     }
+
+    console.log("📅 Calculated next available:", {
+      date: nextAvailableDate,
+      time: nextAvailableTime,
+    });
   }
+
+  console.log("Next available:", { nextAvailableDate, nextAvailableTime });
 
   console.log("Current booking:", currentBooking);
   console.log("Upcoming booking:", upcomingBooking);
@@ -658,6 +684,7 @@ exports.getVehicleCalendar = asyncHandler(async (req, res, next) => {
       currentBooking: currentBooking || null,
       upcomingBooking: upcomingBooking || null,
       nextAvailableDate,
+      nextAvailableTime,
       blockedDates: uniqueBlockedDates,
       bookedPeriods,
       searchPeriod: {
