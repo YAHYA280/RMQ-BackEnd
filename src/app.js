@@ -60,6 +60,7 @@ app.use(
         "http://127.0.0.1:3001",
         "https://www.melhorquenada.com",
         "https://melhorquenada.com",
+        "https://api.melhorquenada.com",
       ];
 
       if (allowedOrigins.includes(origin)) {
