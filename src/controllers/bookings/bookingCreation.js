@@ -1,4 +1,4 @@
-// src/controllers/bookings/bookingCreation.js - UPDATED: Minimum 2 days + same-day logic
+// src/controllers/bookings/bookingCreation.js - UPDATED: Minimum 1 day + same-day logic
 const { Booking, Customer, Vehicle, Admin } = require("../../models");
 const { validationResult } = require("express-validator");
 const { Op } = require("sequelize");
@@ -43,8 +43,8 @@ exports.createWebsiteBooking = asyncHandler(async (req, res, next) => {
   console.log("Website booking request:", req.body);
 
   try {
-    // UPDATED: Validate minimum 2 days first
-    const dateValidation = validateBookingDates(pickupDate, returnDate);
+    // UPDATED: Validate dates and times (allows same-day bookings)
+    const dateValidation = validateBookingDates(pickupDate, returnDate, pickupTime, returnTime);
     if (!dateValidation.isValid) {
       return next(new ErrorResponse(dateValidation.error, 400));
     }
@@ -95,7 +95,7 @@ exports.createWebsiteBooking = asyncHandler(async (req, res, next) => {
       return next(new ErrorResponse(errorMessage, 409));
     }
 
-    // Calculate required fields using your time logic (minimum 2 days)
+    // Calculate required fields using your time logic (minimum 1 day)
     const totalDays = calculateRentalDaysWithTimeLogic(
       pickupDate,
       returnDate,
@@ -103,9 +103,9 @@ exports.createWebsiteBooking = asyncHandler(async (req, res, next) => {
       returnTime
     );
 
-    // UPDATED: Validate that we have at least 2 days
+    // UPDATED: Validate that we have at least 1 day
     if (totalDays < 1) {
-      return next(new ErrorResponse("Minimum rental period is 2 days", 400));
+      return next(new ErrorResponse("Minimum rental period is 1 day", 400));
     }
 
     const totalAmount = parseFloat(vehicle.price) * totalDays;
@@ -113,7 +113,7 @@ exports.createWebsiteBooking = asyncHandler(async (req, res, next) => {
     // Generate booking number
     const bookingNumber = await Booking.generateBookingNumber();
 
-    console.log("Calculated values with time logic (minimum 2 days):", {
+    console.log("Calculated values with time logic (minimum 1 day):", {
       bookingNumber,
       totalDays,
       totalAmount,
@@ -175,7 +175,7 @@ exports.createWebsiteBooking = asyncHandler(async (req, res, next) => {
       status: booking.status,
       pickupTime: booking.pickupTime,
       returnTime: booking.returnTime,
-      minimumDays: totalDays >= 2 ? "✓" : "✗",
+      minimumDays: totalDays >= 1 ? "✓" : "✗",
     });
 
     // Fetch the created booking with associations
@@ -200,10 +200,10 @@ exports.createWebsiteBooking = asyncHandler(async (req, res, next) => {
         "Booking request submitted successfully. We will contact you soon to confirm.",
       data: createdBooking,
       bookingDetails: {
-        duration: `${totalDays} days`,
+        duration: `${totalDays} day${totalDays > 1 ? 's' : ''}`,
         totalAmount: `€${totalAmount}`,
         dailyRate: `€${vehicle.price}/day`,
-        minimumMet: totalDays >= 2,
+        minimumMet: totalDays >= 1,
       },
     });
   } catch (error) {
@@ -238,8 +238,8 @@ exports.createAdminBooking = asyncHandler(async (req, res, next) => {
   console.log("Admin booking request:", req.body);
 
   try {
-    // UPDATED: Validate minimum 2 days first
-    const dateValidation = validateBookingDates(pickupDate, returnDate);
+    // UPDATED: Validate dates and times (allows same-day bookings)
+    const dateValidation = validateBookingDates(pickupDate, returnDate, pickupTime, returnTime);
     if (!dateValidation.isValid) {
       return next(new ErrorResponse(dateValidation.error, 400));
     }
@@ -307,7 +307,7 @@ exports.createAdminBooking = asyncHandler(async (req, res, next) => {
       return next(new ErrorResponse(errorMessage, 400));
     }
 
-    // Calculate required fields using your time logic (minimum 2 days)
+    // Calculate required fields using your time logic (minimum 1 day)
     const totalDays = calculateRentalDaysWithTimeLogic(
       pickupDate,
       returnDate,
@@ -315,9 +315,9 @@ exports.createAdminBooking = asyncHandler(async (req, res, next) => {
       returnTime
     );
 
-    // UPDATED: Validate that we have at least 2 days
-    if (totalDays < 2) {
-      return next(new ErrorResponse("Minimum rental period is 2 days", 400));
+    // UPDATED: Validate that we have at least 1 day
+    if (totalDays < 1) {
+      return next(new ErrorResponse("Minimum rental period is 1 day", 400));
     }
 
     const totalAmount = parseFloat(vehicle.price) * totalDays;
@@ -325,7 +325,7 @@ exports.createAdminBooking = asyncHandler(async (req, res, next) => {
     // Generate booking number
     const bookingNumber = await Booking.generateBookingNumber();
 
-    console.log("Calculated admin booking values (minimum 2 days):", {
+    console.log("Calculated admin booking values (minimum 1 day):", {
       bookingNumber,
       totalDays,
       totalAmount,
@@ -362,7 +362,7 @@ exports.createAdminBooking = asyncHandler(async (req, res, next) => {
       totalAmount: booking.totalAmount,
       pickupTime: booking.pickupTime,
       returnTime: booking.returnTime,
-      minimumDays: totalDays >= 2 ? "✓" : "✗",
+      minimumDays: totalDays >= 1 ? "✓" : "✗",
       status: "confirmed",
     });
 
@@ -402,7 +402,7 @@ exports.createAdminBooking = asyncHandler(async (req, res, next) => {
       message: "Booking created successfully",
       data: createdBooking,
       bookingDetails: {
-        duration: `${totalDays} days (minimum 2 days met)`,
+        duration: `${totalDays} day${totalDays > 1 ? 's' : ''}`,
         totalAmount: `€${totalAmount}`,
         dailyRate: `€${vehicle.price}/day`,
         autoConfirmed: true,

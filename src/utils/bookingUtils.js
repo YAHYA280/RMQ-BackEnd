@@ -1,11 +1,11 @@
-// src/utils/bookingUtils.js - UPDATED: Minimum 2 days + same-day logic
+// src/utils/bookingUtils.js - UPDATED: Minimum 1 day + same-day logic
 /**
- * Calculate rental days with time logic (MINIMUM 2 DAYS)
+ * Calculate rental days with time logic (MINIMUM 1 DAY)
  * @param {string} pickupDate - Date in YYYY-MM-DD format
  * @param {string} returnDate - Date in YYYY-MM-DD format
  * @param {string} pickupTime - Time in HH:MM format
  * @param {string} returnTime - Time in HH:MM format
- * @returns {number} Number of rental days (minimum 2)
+ * @returns {number} Number of rental days (minimum 1)
  */
 function calculateRentalDaysWithTimeLogic(
   pickupDate,
@@ -28,10 +28,14 @@ function calculateRentalDaysWithTimeLogic(
 
       const pickupMinutes = pickupHour * 60 + pickupMin;
       const returnMinutes = returnHour * 60 + returnMin;
-      const hoursDiff = (returnMinutes - pickupMinutes) / 60;
 
-      // If less than 4 hours, charge minimum 1 day
-      // If more than 4 hours, still 1 day
+      // For same-day rentals, return time must be after pickup time
+      if (returnMinutes <= pickupMinutes) {
+        console.error("Same-day booking: Return time must be after pickup time");
+        return 0; // Invalid booking - will be caught by validation
+      }
+
+      // Same-day rental: always charge 1 day regardless of hours
       return 1;
     }
 
@@ -98,12 +102,14 @@ const getTimeExcessInfo = (pickupTime, returnTime) => {
 };
 
 /**
- * Validate booking dates (UPDATED: minimum 2 days)
+ * Validate booking dates and times (UPDATED: minimum 1 day, allows same-day bookings)
  * @param {string} pickupDate
  * @param {string} returnDate
+ * @param {string} pickupTime - Optional, for same-day validation
+ * @param {string} returnTime - Optional, for same-day validation
  * @returns {object}
  */
-const validateBookingDates = (pickupDate, returnDate) => {
+const validateBookingDates = (pickupDate, returnDate, pickupTime = null, returnTime = null) => {
   const pickup = new Date(pickupDate);
   const returnD = new Date(returnDate);
   const today = new Date();
@@ -113,21 +119,28 @@ const validateBookingDates = (pickupDate, returnDate) => {
     return { isValid: false, error: "Pickup date cannot be in the past" };
   }
 
-  if (returnD <= pickup) {
-    return { isValid: false, error: "Return date must be after pickup date" };
+  // Allow same-day bookings (pickup and return on the same day)
+  if (returnD < pickup) {
+    return { isValid: false, error: "Return date cannot be before pickup date" };
   }
 
-  // UPDATED: Check minimum 2 days
-  const diffTime = Math.abs(returnD.getTime() - pickup.getTime());
-  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  // For same-day bookings, validate that return time is after pickup time
+  if (pickupDate === returnDate && pickupTime && returnTime) {
+    const [pickupHour, pickupMin] = pickupTime.split(":").map(Number);
+    const [returnHour, returnMin] = returnTime.split(":").map(Number);
 
-  if (diffDays < 2) {
-    return {
-      isValid: false,
-      error: "Minimum rental period is 2 days",
-    };
+    const pickupMinutes = pickupHour * 60 + pickupMin;
+    const returnMinutes = returnHour * 60 + returnMin;
+
+    if (returnMinutes <= pickupMinutes) {
+      return {
+        isValid: false,
+        error: "For same-day bookings, return time must be after pickup time"
+      };
+    }
   }
 
+  // No minimum day restriction - same-day bookings are allowed
   return { isValid: true };
 };
 

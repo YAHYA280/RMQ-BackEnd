@@ -122,8 +122,10 @@ exports.validateVehicle = [
 
   body("licensePlate")
     .trim()
-    .matches(/^\d{5}[A-Z]$/)
-    .withMessage("License plate must be in format: 12345A"),
+    .notEmpty()
+    .withMessage("License plate is required")
+    .isLength({ min: 1, max: 20 })
+    .withMessage("License plate must be between 1 and 20 characters"),
 
   body("whatsappNumber")
     .matches(/^0[67]\d{8}$/)
@@ -240,8 +242,10 @@ exports.validateVehicleUpdate = [
   body("licensePlate")
     .optional()
     .trim()
-    .matches(/^\d{5}[A-Z]$/)
-    .withMessage("License plate must be in format: 12345A"),
+    .notEmpty()
+    .withMessage("License plate cannot be empty")
+    .isLength({ min: 1, max: 20 })
+    .withMessage("License plate must be between 1 and 20 characters"),
 
   body("whatsappNumber")
     .optional()

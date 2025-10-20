@@ -50,19 +50,11 @@ const Booking = sequelize.define(
       validate: {
         isDate: true,
         isAfterPickup(value) {
-          if (value <= this.pickupDate) {
-            throw new Error("Return date must be after pickup date");
+          // Allow same-day bookings (pickup and return can be on the same day)
+          if (value < this.pickupDate) {
+            throw new Error("Return date cannot be before pickup date");
           }
-
-          // UPDATED: Validate minimum 1 days
-          const pickup = new Date(this.pickupDate);
-          const returnD = new Date(value);
-          const diffTime = Math.abs(returnD.getTime() - pickup.getTime());
-          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-          if (diffDays < 1) {
-            throw new Error("Minimum rental period is 2 days");
-          }
+          // No minimum day validation here - it will be handled by time logic
         },
       },
     },
@@ -101,7 +93,7 @@ const Booking = sequelize.define(
       type: DataTypes.INTEGER,
       allowNull: false,
       validate: {
-        min: 2, // UPDATED: Minimum 2 days
+        min: 1, // UPDATED: Minimum 1 day
       },
     },
     totalAmount: {
@@ -225,7 +217,7 @@ const Booking = sequelize.define(
 
 // Instance methods
 
-// UPDATED: Calculate rental days with time logic (minimum 1 days)
+// UPDATED: Calculate rental days with time logic (minimum 1 day)
 Booking.prototype.calculateRentalDays = function () {
   if (
     !this.pickupDate ||
@@ -236,7 +228,7 @@ Booking.prototype.calculateRentalDays = function () {
     return 1;
   }
 
-  // Use the utility function with minimum 2 days
+  // Use the utility function with minimum 1 day
   return calculateRentalDaysWithTimeLogic(
     this.pickupDate,
     this.returnDate,
@@ -250,13 +242,13 @@ Booking.prototype.getTimeExcessInfo = function () {
   return getTimeExcessInfo(this.pickupTime, this.returnTime);
 };
 
-// LEGACY: Original duration method (kept for backward compatibility, minimum 2 days)
+// LEGACY: Original duration method (kept for backward compatibility, minimum 1 day)
 Booking.prototype.getDuration = function () {
   const pickup = new Date(this.pickupDate);
   const returnDate = new Date(this.returnDate);
   const diffTime = Math.abs(returnDate - pickup);
   const days = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-  return Math.max(2, days); // UPDATED: Minimum 2 days
+  return Math.max(1, days); // UPDATED: Minimum 1 day
 };
 
 Booking.prototype.isOverdue = function () {
