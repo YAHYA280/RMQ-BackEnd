@@ -80,17 +80,27 @@ exports.validateVehicle = [
 
   body("brand")
     .isIn([
+      "Audi",
+      "BMW",
+      "Citroën",
       "Cupra",
       "Dacia",
+      "Fiat",
+      "Ford",
       "Hyundai",
       "KIA",
       "Mercedes",
+      "Nissan",
       "Opel",
       "Peugeot",
       "Porsche",
       "Renault",
       "SEAT",
+      "Skoda",
+      "Tesla",
+      "Toyota",
       "Volkswagen",
+      "Volvo",
     ])
     .withMessage("Please select a valid brand"),
 
@@ -193,17 +203,27 @@ exports.validateVehicleUpdate = [
   body("brand")
     .optional()
     .isIn([
+      "Audi",
+      "BMW",
+      "Citroën",
       "Cupra",
       "Dacia",
+      "Fiat",
+      "Ford",
       "Hyundai",
       "KIA",
       "Mercedes",
+      "Nissan",
       "Opel",
       "Peugeot",
       "Porsche",
       "Renault",
       "SEAT",
+      "Skoda",
+      "Tesla",
+      "Toyota",
       "Volkswagen",
+      "Volvo",
     ])
     .withMessage("Please select a valid brand"),
 
@@ -244,8 +264,12 @@ exports.validateVehicleUpdate = [
     .trim()
     .notEmpty()
     .withMessage("License plate cannot be empty")
-    .isLength({ min: 1, max: 20 })
-    .withMessage("License plate must be between 1 and 20 characters"),
+    .isLength({ min: 1, max: 15 })
+    .withMessage("License plate must be between 1 and 15 characters")
+    .matches(/^[A-Za-z0-9]+$/)
+    .withMessage(
+      "License plate must contain only letters and numbers (no spaces or special characters)"
+    ),
 
   body("whatsappNumber")
     .optional()

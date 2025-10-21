@@ -20,17 +20,27 @@ const Vehicle = sequelize.define(
     },
     brand: {
       type: DataTypes.ENUM(
+        "Audi",
+        "BMW",
+        "Citroën",
         "Cupra",
         "Dacia",
+        "Fiat",
+        "Ford",
         "Hyundai",
         "KIA",
         "Mercedes",
+        "Nissan",
         "Opel",
         "Peugeot",
         "Porsche",
         "Renault",
         "SEAT",
-        "Volkswagen"
+        "Skoda",
+        "Tesla",
+        "Toyota",
+        "Volkswagen",
+        "Volvo"
       ),
       allowNull: false,
     },
@@ -75,11 +85,15 @@ const Vehicle = sequelize.define(
       },
     },
     licensePlate: {
-      type: DataTypes.STRING(20),
+      type: DataTypes.STRING(15),
       allowNull: false,
       unique: true,
       validate: {
-        len: [1, 20],
+        len: [1, 15],
+        is: {
+          args: /^[A-Za-z0-9]+$/i,
+          msg: "License plate must contain only letters and numbers",
+        },
       },
     },
     whatsappNumber: {

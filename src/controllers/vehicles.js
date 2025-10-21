@@ -11,17 +11,27 @@ const { sequelize } = require("../config/database");
 // @access  Public
 const getBrands = asyncHandler(async (req, res, next) => {
   const brands = [
+    "Audi",
+    "BMW",
+    "Citroën",
     "Cupra",
     "Dacia",
+    "Fiat",
+    "Ford",
     "Hyundai",
     "KIA",
     "Mercedes",
+    "Nissan",
     "Opel",
     "Peugeot",
     "Porsche",
     "Renault",
     "SEAT",
+    "Skoda",
+    "Tesla",
+    "Toyota",
     "Volkswagen",
+    "Volvo",
   ];
 
   res.status(200).json({
