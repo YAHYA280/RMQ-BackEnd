@@ -30,9 +30,9 @@ const connectDB = async () => {
     await sequelize.authenticate();
     console.log("✅ PostgreSQL Connected successfully!".cyan.underline.bold);
 
-    // Sync database in development - but be careful with alter
+    // Sync database in development - alter will update column definitions
     if (process.env.NODE_ENV === "development") {
-      await sequelize.sync({ force: false }); // Changed from alter to avoid conflicts
+      await sequelize.sync({ alter: true }); // Use alter to update existing columns
       console.log(
         "✅ Database synchronized - Tables created/updated".green.bold
       );
