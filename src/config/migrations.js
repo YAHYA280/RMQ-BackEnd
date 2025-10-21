@@ -12,7 +12,7 @@ const runMigrations = async () => {
     // Migration 1: Update vehicle brand enum
     await updateVehicleBrandEnum();
 
-    // Migration 2: Update license plate length (already done in model, but ensure DB matches)
+    // Migration 2: Update license plate length to 15 characters
     await updateLicensePlateField();
 
     console.log("✅ All migrations completed successfully!".green.bold);
@@ -94,19 +94,47 @@ const updateVehicleBrandEnum = async () => {
 };
 
 /**
- * Update license plate field to support alphanumeric (already in model)
+ * Update license plate field from VARCHAR(6) to VARCHAR(15)
  */
 const updateLicensePlateField = async () => {
   try {
-    console.log("  → Checking license plate field...".cyan);
+    console.log("  → Updating license plate field length...".cyan);
 
-    // This is handled by Sequelize sync, but we log it
-    console.log("  ✓ License plate validation updated in model".green);
+    const dialect = sequelize.getDialect();
+
+    if (dialect === "postgres") {
+      // Check current column type
+      const [currentType] = await sequelize.query(`
+        SELECT character_maximum_length 
+        FROM information_schema.columns 
+        WHERE table_name = 'vehicles' 
+        AND column_name = 'license_plate';
+      `);
+
+      const currentLength = currentType[0]?.character_maximum_length;
+      console.log(`    Current length: ${currentLength}`.gray);
+
+      if (currentLength !== 15) {
+        // Alter the column to VARCHAR(15)
+        await sequelize.query(`
+          ALTER TABLE vehicles 
+          ALTER COLUMN license_plate TYPE VARCHAR(15);
+        `);
+        console.log("    ✓ Updated license_plate to VARCHAR(15)".green);
+      } else {
+        console.log("    ⏭️  License plate already VARCHAR(15)".gray);
+      }
+    } else {
+      console.log("    ⏭️  Not PostgreSQL, skipping column update".yellow);
+    }
+
+    console.log("  ✓ License plate field updated".green);
   } catch (error) {
     console.error(
       "  ✗ Failed to update license plate field:".red,
       error.message
     );
+    // Don't throw - allow app to continue
   }
 };
 
