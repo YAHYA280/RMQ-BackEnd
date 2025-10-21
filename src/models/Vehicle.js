@@ -75,11 +75,11 @@ const Vehicle = sequelize.define(
       },
     },
     licensePlate: {
-      type: DataTypes.STRING(6),
+      type: DataTypes.STRING(20),
       allowNull: false,
       unique: true,
       validate: {
-        is: /^\d{5}[A-Z]$/,
+        len: [1, 20],
       },
     },
     whatsappNumber: {
@@ -93,8 +93,8 @@ const Vehicle = sequelize.define(
       type: DataTypes.DECIMAL(10, 2),
       allowNull: false,
       validate: {
-        min: 1, // UPDATED: Added minimum validation
-        max: 10000, // UPDATED: Added maximum validation
+        min: 1,
+        max: 10000,
       },
     },
     mileage: {
