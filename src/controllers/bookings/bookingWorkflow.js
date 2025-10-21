@@ -1,4 +1,4 @@
-// src/controllers/bookings/bookingWorkflow.js - UPDATED: Fixed customer attributes to match simplified Customer model
+// src/controllers/bookings/bookingWorkflow.js - REFACTORED: Update to use charged days calculation
 const { Booking, Customer, Vehicle, Admin } = require("../../models");
 const asyncHandler = require("../../middleware/asyncHandler");
 const ErrorResponse = require("../../utils/errorResponse");
@@ -20,7 +20,7 @@ exports.confirmBooking = asyncHandler(async (req, res, next) => {
           "phone",
           "email",
           "dateOfBirth",
-          "address", // Single address field (removed city)
+          "address",
           "country",
           "driverLicenseNumber",
           "passportNumber",
@@ -59,12 +59,14 @@ exports.confirmBooking = asyncHandler(async (req, res, next) => {
     );
   }
 
-  // Verify vehicle is still available for these dates
+  // --- Availability Check ---
   const isAvailable = await Booking.checkVehicleAvailability(
     booking.vehicleId,
     booking.pickupDate,
     booking.returnDate,
-    booking.id // Exclude current booking from check
+    booking.id,
+    booking.pickupTime,
+    booking.returnTime
   );
 
   if (!isAvailable) {
@@ -76,21 +78,21 @@ exports.confirmBooking = asyncHandler(async (req, res, next) => {
     );
   }
 
-  // Update booking status
+  // --- Update Status ---
   await booking.update({
     status: "confirmed",
     confirmedById: req.admin.id,
     confirmedAt: new Date(),
   });
 
-  // Update customer and vehicle stats
+  // --- Update Stats ---
   const customer = await Customer.findByPk(booking.customerId);
   const vehicle = await Vehicle.findByPk(booking.vehicleId);
 
   await customer.incrementBookings(booking.totalAmount);
   await vehicle.incrementBookings();
 
-  // Only make vehicle unavailable if booking starts today or in the past
+  // Make vehicle unavailable if booking starts today or in the past
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const pickupDate = new Date(booking.pickupDate);
@@ -107,13 +109,10 @@ exports.confirmBooking = asyncHandler(async (req, res, next) => {
     );
   }
 
-  // Generate contract automatically
+  // --- Generate Contract ---
   try {
     const contractGenerator = new ContractGenerator();
     const contractBuffer = await contractGenerator.generateContract(booking);
-
-    // You can save the contract or send it via email here
-    // For now, we'll just include a flag that contract is ready
 
     res.status(200).json({
       success: true,
@@ -124,7 +123,6 @@ exports.confirmBooking = asyncHandler(async (req, res, next) => {
     });
   } catch (contractError) {
     console.error("Contract generation error:", contractError);
-    // Still return success for booking confirmation even if contract fails
     res.status(200).json({
       success: true,
       message: "Booking confirmed successfully (contract generation failed)",
@@ -202,7 +200,15 @@ exports.pickupVehicle = asyncHandler(async (req, res, next) => {
 // @route   PUT /api/bookings/:id/return
 // @access  Private (admin)
 exports.returnVehicle = asyncHandler(async (req, res, next) => {
-  const booking = await Booking.findByPk(req.params.id);
+  const booking = await Booking.findByPk(req.params.id, {
+    include: [
+      {
+        model: Vehicle,
+        as: "vehicle",
+        attributes: ["id", "name", "brand", "price"],
+      },
+    ],
+  });
 
   if (!booking) {
     return next(new ErrorResponse("Booking not found", 404));
@@ -214,8 +220,58 @@ exports.returnVehicle = asyncHandler(async (req, res, next) => {
     );
   }
 
+  // --- Calculate Final Charges (if late return) ---
+  const now = new Date();
+  const scheduledReturn = new Date(
+    `${booking.returnDate}T${booking.returnTime}:00`
+  );
+
+  let finalChargedDays = booking.totalDays;
+  let lateReturnFee = 0;
+  let wasLateReturn = false;
+
+  // Check if returned late
+  if (now > scheduledReturn) {
+    const actualReturnDate = now.toISOString().split("T")[0];
+    const actualReturnTime = `${String(now.getHours()).padStart(
+      2,
+      "0"
+    )}:${String(now.getMinutes()).padStart(2, "0")}`;
+
+    const pricing = booking.calculateChargedDays();
+    const {
+      calculateChargedDaysWithLatenessRule,
+    } = require("../../utils/bookingUtils");
+
+    const actualPricing = calculateChargedDaysWithLatenessRule(
+      booking.pickupDate,
+      actualReturnDate,
+      booking.pickupTime,
+      actualReturnTime
+    );
+
+    if (actualPricing.chargedDays > booking.totalDays) {
+      finalChargedDays = actualPricing.chargedDays;
+      lateReturnFee =
+        (finalChargedDays - booking.totalDays) *
+        parseFloat(booking.vehicle.price);
+      wasLateReturn = true;
+
+      console.log("Late return detected:", {
+        scheduled: scheduledReturn,
+        actual: now,
+        originalChargedDays: booking.totalDays,
+        finalChargedDays: finalChargedDays,
+        lateReturnFee: lateReturnFee,
+      });
+    }
+  }
+
+  // --- Complete Booking ---
   await booking.update({
     status: "completed",
+    totalDays: finalChargedDays,
+    totalAmount: parseFloat(booking.dailyRate) * finalChargedDays,
   });
 
   // Always make vehicle available again when booking is completed
@@ -225,7 +281,24 @@ exports.returnVehicle = asyncHandler(async (req, res, next) => {
 
   res.status(200).json({
     success: true,
-    message: "Booking completed successfully",
+    message: wasLateReturn
+      ? "Booking completed successfully with late return fee applied"
+      : "Booking completed successfully",
     data: booking,
+    lateReturnInfo: wasLateReturn
+      ? {
+          wasLate: true,
+          originalChargedDays:
+            booking.totalDays - (finalChargedDays - booking.totalDays),
+          finalChargedDays: finalChargedDays,
+          lateReturnFee: lateReturnFee,
+          originalAmount:
+            parseFloat(booking.dailyRate) *
+            (booking.totalDays - (finalChargedDays - booking.totalDays)),
+          finalAmount: booking.totalAmount,
+        }
+      : {
+          wasLate: false,
+        },
   });
 });

@@ -1,11 +1,78 @@
-// src/utils/bookingUtils.js - UPDATED: Minimum 1 day + same-day logic
+// src/utils/bookingUtils.js - REFACTORED: Grace-based lateness rule + sub-day admin bookings
+
+// --- Core Pricing Function (New Lateness Rule) ---
+
 /**
- * Calculate rental days with time logic (MINIMUM 1 DAY)
+ * Calculate charged days using the 90-minute lateness rule.
+ *
+ * Rule: Lateness = time beyond whole 24h blocks from startAt (same time-of-day anchor).
+ * If lateness >= 90 minutes (1h 30m), charge +1 extra day.
+ *
  * @param {string} pickupDate - Date in YYYY-MM-DD format
  * @param {string} returnDate - Date in YYYY-MM-DD format
  * @param {string} pickupTime - Time in HH:MM format
  * @param {string} returnTime - Time in HH:MM format
- * @returns {number} Number of rental days (minimum 1)
+ * @returns {object} { fullDays, latenessMinutes, chargedDays, durationMinutes }
+ */
+function calculateChargedDaysWithLatenessRule(
+  pickupDate,
+  returnDate,
+  pickupTime,
+  returnTime
+) {
+  try {
+    // Parse dates and times
+    const pickupDateTime = new Date(`${pickupDate}T${pickupTime}:00`);
+    const returnDateTime = new Date(`${returnDate}T${returnTime}:00`);
+
+    // Total duration in minutes
+    const totalMinutes = Math.floor(
+      (returnDateTime - pickupDateTime) / (1000 * 60)
+    );
+
+    if (totalMinutes < 0) {
+      console.error("Return time is before pickup time");
+      return {
+        fullDays: 0,
+        latenessMinutes: 0,
+        chargedDays: 0,
+        durationMinutes: 0,
+      };
+    }
+
+    // Calculate full 24-hour blocks
+    const fullDays = Math.floor(totalMinutes / 1440); // 1440 = 24 * 60
+
+    // Calculate lateness (remainder beyond full days)
+    const latenessMinutes = totalMinutes - fullDays * 1440;
+
+    // Apply lateness rule: >= 90 minutes adds +1 day
+    const chargedDays = fullDays + (latenessMinutes >= 90 ? 1 : 0);
+
+    return {
+      fullDays,
+      latenessMinutes,
+      chargedDays: Math.max(1, chargedDays), // Minimum 1 day charged
+      durationMinutes: totalMinutes,
+    };
+  } catch (error) {
+    console.error("Error calculating charged days:", error);
+    return {
+      fullDays: 0,
+      latenessMinutes: 0,
+      chargedDays: 1,
+      durationMinutes: 0,
+    };
+  }
+}
+
+// --- Legacy Function (Website Compatibility) ---
+
+/**
+ * LEGACY: Calculate rental days with minimum 1-day enforcement (for website).
+ * Kept for backward compatibility with existing website booking flow.
+ *
+ * @deprecated Use calculateChargedDaysWithLatenessRule for admin bookings
  */
 function calculateRentalDaysWithTimeLogic(
   pickupDate,
@@ -13,103 +80,29 @@ function calculateRentalDaysWithTimeLogic(
   pickupTime,
   returnTime
 ) {
-  try {
-    const pickup = new Date(pickupDate);
-    const returnD = new Date(returnDate);
+  const result = calculateChargedDaysWithLatenessRule(
+    pickupDate,
+    returnDate,
+    pickupTime,
+    returnTime
+  );
 
-    // Basic day calculation
-    const diffTime = Math.abs(returnD.getTime() - pickup.getTime());
-    let diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-    // If same day, calculate based on hours
-    if (diffDays === 0 && pickupTime && returnTime) {
-      const [pickupHour, pickupMin] = pickupTime.split(":").map(Number);
-      const [returnHour, returnMin] = returnTime.split(":").map(Number);
-
-      const pickupMinutes = pickupHour * 60 + pickupMin;
-      const returnMinutes = returnHour * 60 + returnMin;
-
-      // For same-day rentals, return time must be after pickup time
-      if (returnMinutes <= pickupMinutes) {
-        console.error("Same-day booking: Return time must be after pickup time");
-        return 0; // Invalid booking - will be caught by validation
-      }
-
-      // Same-day rental: always charge 1 day regardless of hours
-      return 1;
-    }
-
-    // For multi-day rentals, apply time logic
-    if (pickupTime && returnTime && diffDays > 0) {
-      const [pickupHour, pickupMin] = pickupTime.split(":").map(Number);
-      const [returnHour, returnMin] = returnTime.split(":").map(Number);
-
-      const timeDifference =
-        returnHour * 60 + returnMin - (pickupHour * 60 + pickupMin);
-
-      // If return time is significantly later than pickup time, add extra day
-      if (timeDifference > 60) {
-        // More than 1 hour later
-        diffDays += 1;
-      }
-    }
-
-    return Math.max(1, diffDays); // Minimum 1 day
-  } catch (error) {
-    console.error("Error calculating rental days:", error);
-    return 1; // Fallback to minimum
-  }
+  // Website always enforces minimum 1 day
+  return Math.max(1, result.chargedDays);
 }
 
-/**
- * Get time difference info for display
- * @param {string} pickupTime - Time in HH:MM format
- * @param {string} returnTime - Time in HH:MM format
- * @returns {object} Time excess information
- */
-const getTimeExcessInfo = (pickupTime, returnTime) => {
-  if (!pickupTime || !returnTime) {
-    return null;
-  }
-
-  const [pickupHour, pickupMin] = pickupTime.split(":").map(Number);
-  const [returnHour, returnMin] = returnTime.split(":").map(Number);
-
-  const pickupMinutes = pickupHour * 60 + pickupMin;
-  const returnMinutes = returnHour * 60 + returnMin;
-
-  const timeDifference = returnMinutes - pickupMinutes;
-  const oneHourInMinutes = 60;
-
-  if (timeDifference > oneHourInMinutes) {
-    const excessMinutes = timeDifference - oneHourInMinutes;
-    const excessHours = Math.floor(excessMinutes / 60);
-    const remainingMinutes = excessMinutes % 60;
-
-    return {
-      hasExcess: true,
-      excessHours,
-      excessMinutes: remainingMinutes,
-      totalExcessMinutes: excessMinutes,
-      message: `Return time exceeds pickup time by ${excessHours}h ${remainingMinutes}m (1 day grace period exceeded)`,
-    };
-  }
-
-  return {
-    hasExcess: false,
-    message: "Within 1-hour grace period",
-  };
-};
+// --- Validation Functions ---
 
 /**
- * Validate booking dates and times (UPDATED: minimum 1 day, allows same-day bookings)
- * @param {string} pickupDate
- * @param {string} returnDate
- * @param {string} pickupTime - Optional, for same-day validation
- * @param {string} returnTime - Optional, for same-day validation
- * @returns {object}
+ * Validate booking dates and times for WEBSITE bookings.
+ * Enforces minimum 1 day rental period.
  */
-const validateBookingDates = (pickupDate, returnDate, pickupTime = null, returnTime = null) => {
+const validateBookingDates = (
+  pickupDate,
+  returnDate,
+  pickupTime = null,
+  returnTime = null
+) => {
   const pickup = new Date(pickupDate);
   const returnD = new Date(returnDate);
   const today = new Date();
@@ -119,12 +112,14 @@ const validateBookingDates = (pickupDate, returnDate, pickupTime = null, returnT
     return { isValid: false, error: "Pickup date cannot be in the past" };
   }
 
-  // Allow same-day bookings (pickup and return on the same day)
   if (returnD < pickup) {
-    return { isValid: false, error: "Return date cannot be before pickup date" };
+    return {
+      isValid: false,
+      error: "Return date cannot be before pickup date",
+    };
   }
 
-  // For same-day bookings, validate that return time is after pickup time
+  // For same-day bookings, validate return time is after pickup time
   if (pickupDate === returnDate && pickupTime && returnTime) {
     const [pickupHour, pickupMin] = pickupTime.split(":").map(Number);
     const [returnHour, returnMin] = returnTime.split(":").map(Number);
@@ -135,64 +130,80 @@ const validateBookingDates = (pickupDate, returnDate, pickupTime = null, returnT
     if (returnMinutes <= pickupMinutes) {
       return {
         isValid: false,
-        error: "For same-day bookings, return time must be after pickup time"
+        error: "For same-day bookings, return time must be after pickup time",
       };
     }
   }
 
-  // No minimum day restriction - same-day bookings are allowed
+  // Website: Enforce minimum 1 day
+  if (pickupTime && returnTime) {
+    const result = calculateChargedDaysWithLatenessRule(
+      pickupDate,
+      returnDate,
+      pickupTime,
+      returnTime
+    );
+
+    if (result.chargedDays < 1) {
+      return {
+        isValid: false,
+        error: "Minimum rental period is 1 day for website bookings",
+      };
+    }
+  }
+
   return { isValid: true };
 };
 
 /**
- * NEW: Check if a new booking can start on the same day as another booking ends
- * @param {string} existingEndDate - End date of existing booking (YYYY-MM-DD)
- * @param {string} existingEndTime - End time of existing booking (HH:MM)
- * @param {string} newStartDate - Start date of new booking (YYYY-MM-DD)
- * @param {string} newStartTime - Start time of new booking (HH:MM)
- * @returns {object} Validation result
+ * Validate booking dates and times for ADMIN bookings.
+ * Allows sub-day durations (minimum 15 minutes configurable).
  */
-const validateSameDayBooking = (
-  existingEndDate,
-  existingEndTime,
-  newStartDate,
-  newStartTime
+const validateAdminBookingDates = (
+  pickupDate,
+  returnDate,
+  pickupTime,
+  returnTime,
+  minDurationMinutes = 15
 ) => {
-  // If not the same date, no conflict
-  if (existingEndDate !== newStartDate) {
-    return { isValid: true };
-  }
+  const pickup = new Date(pickupDate);
+  const returnD = new Date(returnDate);
 
-  // Same date: check if new start time > existing end time
-  const [existingHour, existingMin] = existingEndTime.split(":").map(Number);
-  const [newHour, newMin] = newStartTime.split(":").map(Number);
-
-  const existingEndMinutes = existingHour * 60 + existingMin;
-  const newStartMinutes = newHour * 60 + newMin;
-
-  if (newStartMinutes <= existingEndMinutes) {
+  if (returnD < pickup) {
     return {
       isValid: false,
-      error: `New booking must start after ${existingEndTime} on ${existingEndDate}`,
-      conflictType: "same_day_time_conflict",
+      error: "Return date cannot be before pickup date",
     };
   }
 
-  return {
-    isValid: true,
-    message: `Same-day booking allowed (starts at ${newStartTime}, after ${existingEndTime})`,
-  };
+  if (!pickupTime || !returnTime) {
+    return { isValid: false, error: "Pickup and return times are required" };
+  }
+
+  // Calculate total duration
+  const result = calculateChargedDaysWithLatenessRule(
+    pickupDate,
+    returnDate,
+    pickupTime,
+    returnTime
+  );
+
+  // Admin: Enforce minimum duration (default 15 minutes)
+  if (result.durationMinutes < minDurationMinutes) {
+    return {
+      isValid: false,
+      error: `Minimum rental duration is ${minDurationMinutes} minutes`,
+    };
+  }
+
+  return { isValid: true, chargedDays: result.chargedDays };
 };
 
+// --- Availability Check (Minute Precision) ---
+
 /**
- * NEW: Advanced availability check considering same-day bookings
- * @param {Array} existingBookings - Array of existing bookings
- * @param {string} newPickupDate - New booking pickup date
- * @param {string} newReturnDate - New booking return date
- * @param {string} newPickupTime - New booking pickup time
- * @param {string} newReturnTime - New booking return time
- * @param {string} excludeBookingId - Booking ID to exclude (for updates)
- * @returns {object} Detailed availability result
+ * Check if a new booking conflicts with existing bookings at minute precision.
+ * Handles back-to-back bookings (end == start is allowed).
  */
 const checkAdvancedAvailability = (
   existingBookings,
@@ -205,60 +216,49 @@ const checkAdvancedAvailability = (
   const conflictingBookings = [];
   const sameDayConflicts = [];
 
+  // Parse new booking times
+  const newStart = new Date(`${newPickupDate}T${newPickupTime}:00`);
+  const newEnd = new Date(`${newReturnDate}T${newReturnTime}:00`);
+
   for (const booking of existingBookings) {
-    // Skip if it's the same booking (for updates)
+    // Skip excluded booking (for updates)
     if (excludeBookingId && booking.id === excludeBookingId) continue;
 
     // Skip non-active bookings
     if (!["confirmed", "active"].includes(booking.status)) continue;
 
-    // Check for date range overlaps
-    const bookingStart = new Date(booking.pickupDate);
-    const bookingEnd = new Date(booking.returnDate);
-    const newStart = new Date(newPickupDate);
-    const newEnd = new Date(newReturnDate);
+    // Parse existing booking times
+    const existingStart = new Date(
+      `${booking.pickupDate}T${booking.pickupTime}:00`
+    );
+    const existingEnd = new Date(
+      `${booking.returnDate}T${booking.returnTime}:00`
+    );
 
-    // Standard date overlap check
-    const hasDateOverlap = !(newEnd < bookingStart || newStart > bookingEnd);
+    // Check for overlap at minute precision
+    // Overlap exists if: newStart < existingEnd AND newEnd > existingStart
+    // Back-to-back is OK: newStart == existingEnd OR newEnd == existingStart
+    const hasOverlap = newStart < existingEnd && newEnd > existingStart;
 
-    if (hasDateOverlap) {
-      // Check if it's a same-day scenario that might be allowed
-      if (newPickupDate === booking.returnDate) {
-        // New booking starts on same day existing booking ends
-        const sameDayCheck = validateSameDayBooking(
-          booking.returnDate,
-          booking.returnTime,
-          newPickupDate,
-          newPickupTime
-        );
-
-        if (!sameDayCheck.isValid) {
-          sameDayConflicts.push({
-            booking,
-            reason: sameDayCheck.error,
-            type: "same_day_start",
-          });
-        }
-      } else if (newReturnDate === booking.pickupDate) {
-        // New booking ends on same day existing booking starts
-        const sameDayCheck = validateSameDayBooking(
-          newReturnDate,
-          newReturnTime,
-          booking.pickupDate,
-          booking.pickupTime
-        );
-
-        if (!sameDayCheck.isValid) {
-          sameDayConflicts.push({
-            booking,
-            reason: sameDayCheck.error,
-            type: "same_day_end",
-          });
-        }
-      } else {
-        // Real date overlap
-        conflictingBookings.push(booking);
+    if (hasOverlap) {
+      // Check if it's a same-day edge case
+      if (
+        newPickupDate === booking.returnDate &&
+        newPickupTime === booking.returnTime
+      ) {
+        // Back-to-back: new starts exactly when existing ends (allowed)
+        continue;
       }
+
+      if (
+        newReturnDate === booking.pickupDate &&
+        newReturnTime === booking.pickupTime
+      ) {
+        // Back-to-back: new ends exactly when existing starts (allowed)
+        continue;
+      }
+
+      conflictingBookings.push(booking);
     }
   }
 
@@ -276,10 +276,96 @@ const checkAdvancedAvailability = (
   };
 };
 
+// --- Display Helpers ---
+
+/**
+ * Get lateness information for display purposes.
+ */
+const getLatenessInfo = (pickupTime, returnTime, fullDays) => {
+  if (!pickupTime || !returnTime) {
+    return null;
+  }
+
+  const [pickupHour, pickupMin] = pickupTime.split(":").map(Number);
+  const [returnHour, returnMin] = returnTime.split(":").map(Number);
+
+  const pickupMinutes = pickupHour * 60 + pickupMin;
+  const returnMinutes = returnHour * 60 + returnMin;
+
+  const latenessMinutes = returnMinutes - pickupMinutes;
+  const gracePeriodMinutes = 90;
+
+  if (latenessMinutes >= gracePeriodMinutes) {
+    const hours = Math.floor(latenessMinutes / 60);
+    const minutes = latenessMinutes % 60;
+
+    return {
+      hasLateFee: true,
+      latenessMinutes,
+      hours,
+      minutes,
+      message: `Return time exceeds ${gracePeriodMinutes}-minute grace period by ${hours}h ${minutes}m (+1 day fee applied)`,
+    };
+  }
+
+  return {
+    hasLateFee: false,
+    latenessMinutes,
+    message: `Within ${gracePeriodMinutes}-minute grace period (no extra fee)`,
+  };
+};
+
+// --- Legacy Compatibility (kept for old code) ---
+
+/**
+ * @deprecated Use calculateChargedDaysWithLatenessRule instead
+ */
+const getTimeExcessInfo = (pickupTime, returnTime) => {
+  console.warn("getTimeExcessInfo is deprecated, use getLatenessInfo");
+  return getLatenessInfo(pickupTime, returnTime, 0);
+};
+
+/**
+ * @deprecated Use validateAdminBookingDates instead
+ */
+const validateSameDayBooking = (
+  existingEndDate,
+  existingEndTime,
+  newStartDate,
+  newStartTime
+) => {
+  if (existingEndDate !== newStartDate) {
+    return { isValid: true };
+  }
+
+  const existingEnd = new Date(`${existingEndDate}T${existingEndTime}:00`);
+  const newStart = new Date(`${newStartDate}T${newStartTime}:00`);
+
+  if (newStart <= existingEnd) {
+    return {
+      isValid: false,
+      error: `New booking must start after ${existingEndTime} on ${existingEndDate}`,
+      conflictType: "same_day_time_conflict",
+    };
+  }
+
+  return { isValid: true };
+};
+
 module.exports = {
+  // --- New Primary Functions ---
+  calculateChargedDaysWithLatenessRule,
+  validateAdminBookingDates,
+  getLatenessInfo,
+
+  // --- Website Compatibility (Legacy) ---
   calculateRentalDaysWithTimeLogic,
-  getTimeExcessInfo,
   validateBookingDates,
-  validateSameDayBooking,
+
+  // --- Availability ---
   checkAdvancedAvailability,
+
+  // --- Deprecated (Backward Compatibility) ---
+  getTimeExcessInfo,
+  validateSameDayBooking,
 };

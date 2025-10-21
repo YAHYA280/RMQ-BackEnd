@@ -553,9 +553,25 @@ exports.validateBooking = [
     .isISO8601()
     .withMessage("Please enter a valid return date")
     .custom((value, { req }) => {
-      if (new Date(value) <= new Date(req.body.pickupDate)) {
-        throw new Error("Return date must be after pickup date");
+      const pickupDateTime = new Date(
+        `${req.body.pickupDate}T${req.body.pickupTime || "00:00"}:00`
+      );
+      const returnDateTime = new Date(
+        `${value}T${req.body.returnTime || "23:59"}:00`
+      );
+
+      if (returnDateTime <= pickupDateTime) {
+        throw new Error("Return date/time must be after pickup date/time");
       }
+
+      // Check minimum 1 hour duration
+      const diffMs = returnDateTime.getTime() - pickupDateTime.getTime();
+      const diffHours = diffMs / (1000 * 60 * 60);
+
+      if (diffHours < 1) {
+        throw new Error("Minimum rental duration is 1 hour");
+      }
+
       return true;
     }),
 
@@ -668,7 +684,6 @@ exports.validatePagination = [
 
 // UPDATED: Website booking validation with simplified customer fields
 exports.validateWebsiteBooking = [
-  // Customer information (simplified)
   body("firstName")
     .trim()
     .notEmpty()
@@ -703,7 +718,6 @@ exports.validateWebsiteBooking = [
     .withMessage("Veuillez saisir un email valide")
     .normalizeEmail(),
 
-  // Vehicle and booking details
   body("vehicleId")
     .notEmpty()
     .withMessage("Vehicle ID is required")
@@ -726,7 +740,7 @@ exports.validateWebsiteBooking = [
     .isISO8601()
     .withMessage("Please enter a valid return date")
     .custom((value, { req }) => {
-      if (new Date(value) <= new Date(req.body.pickupDate)) {
+      if (new Date(value) < new Date(req.body.pickupDate)) {
         throw new Error("Return date must be after pickup date");
       }
       return true;
@@ -787,7 +801,13 @@ exports.validateAdminBooking = [
 
   body("returnDate")
     .isISO8601()
-    .withMessage("Please enter a valid return date"),
+    .withMessage("Please enter a valid return date")
+    .custom((value, { req }) => {
+      if (new Date(value) < new Date(req.body.pickupDate)) {
+        throw new Error("Return date cannot be before pickup date");
+      }
+      return true;
+    }),
 
   body("pickupTime")
     .matches(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/)
@@ -795,7 +815,26 @@ exports.validateAdminBooking = [
 
   body("returnTime")
     .matches(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/)
-    .withMessage("Please enter a valid return time (HH:MM format)"),
+    .withMessage("Please enter a valid return time (HH:MM format)")
+    .custom((value, { req }) => {
+      // For same-day bookings, ensure return time is after pickup time
+      if (req.body.pickupDate === req.body.returnDate) {
+        const [pickupHour, pickupMin] = req.body.pickupTime
+          .split(":")
+          .map(Number);
+        const [returnHour, returnMin] = value.split(":").map(Number);
+
+        const pickupMinutes = pickupHour * 60 + pickupMin;
+        const returnMinutes = returnHour * 60 + returnMin;
+
+        if (returnMinutes <= pickupMinutes) {
+          throw new Error(
+            "For same-day bookings, return time must be after pickup time"
+          );
+        }
+      }
+      return true;
+    }),
 
   body("pickupLocation")
     .trim()
@@ -806,4 +845,75 @@ exports.validateAdminBooking = [
     .trim()
     .notEmpty()
     .withMessage("Return location is required"),
+];
+
+exports.validateBookingUpdate = [
+  body("pickupDate")
+    .optional()
+    .isISO8601()
+    .withMessage("Please enter a valid pickup date"),
+
+  body("returnDate")
+    .optional()
+    .isISO8601()
+    .withMessage("Please enter a valid return date"),
+
+  body("pickupTime")
+    .optional()
+    .matches(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/)
+    .withMessage("Please enter a valid pickup time (HH:MM format)"),
+
+  body("returnTime")
+    .optional()
+    .matches(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/)
+    .withMessage("Please enter a valid return time (HH:MM format)"),
+
+  body("pickupLocation")
+    .optional()
+    .isIn([
+      "Tangier Airport",
+      "Tangier City Center",
+      "Tangier Port",
+      "Hotel Pickup",
+      "Custom Location",
+    ])
+    .withMessage("Please select a valid pickup location"),
+
+  body("returnLocation")
+    .optional()
+    .isIn([
+      "Tangier Airport",
+      "Tangier City Center",
+      "Tangier Port",
+      "Hotel Pickup",
+      "Custom Location",
+    ])
+    .withMessage("Please select a valid return location"),
+
+  body("status")
+    .optional()
+    .isIn(["pending", "confirmed", "active", "completed", "cancelled"])
+    .withMessage("Invalid status"),
+
+  body("notes")
+    .optional()
+    .trim()
+    .isLength({ max: 500 })
+    .withMessage("Notes cannot be more than 500 characters"),
+];
+
+// Parameter validations
+exports.validateUUID = [param("id").isUUID().withMessage("Invalid ID format")];
+
+// Query validations
+exports.validatePagination = [
+  query("page")
+    .optional()
+    .isInt({ min: 1 })
+    .withMessage("Page must be a positive integer"),
+
+  query("limit")
+    .optional()
+    .isInt({ min: 1, max: 100 })
+    .withMessage("Limit must be between 1 and 100"),
 ];

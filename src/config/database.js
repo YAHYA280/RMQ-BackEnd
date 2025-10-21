@@ -1,4 +1,4 @@
-// src/config/database.js - Fixed with proper naming strategy + auto-migrations
+// src/config/database.js - Clean configuration without auto-migrations
 const { Sequelize } = require("sequelize");
 require("colors");
 
@@ -37,10 +37,6 @@ const connectDB = async () => {
         "✅ Database synchronized - Tables created/updated".green.bold
       );
     }
-
-    // 🔥 NEW: Run migrations automatically after connection
-    const { runMigrations } = require("./migrations");
-    await runMigrations();
 
     return sequelize;
   } catch (error) {

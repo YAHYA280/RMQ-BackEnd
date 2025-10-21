@@ -1,9 +1,12 @@
-// src/controllers/bookings/bookingUtilities.js - FIXED: Complete stats function
+// src/controllers/bookings/bookingUtilities.js - REFACTORED: Update availability endpoint for lateness rule
 const { Booking, Customer, Vehicle, Admin } = require("../../models");
-const { Op, Sequelize } = require("sequelize"); // FIXED: Added Sequelize import
+const { Op, Sequelize } = require("sequelize");
 const asyncHandler = require("../../middleware/asyncHandler");
 const ErrorResponse = require("../../utils/errorResponse");
 const ContractGenerator = require("../../services/contractGenerator");
+const {
+  calculateChargedDaysWithLatenessRule,
+} = require("../../utils/bookingUtils");
 
 // @desc    Generate contract PDF for booking
 // @route   GET /api/bookings/:id/contract
@@ -12,7 +15,6 @@ exports.generateContract = asyncHandler(async (req, res, next) => {
   console.log(`Starting contract generation for booking ID: ${req.params.id}`);
 
   try {
-    // FIXED: More specific attribute selection to avoid SQL conflicts
     const booking = await Booking.findByPk(req.params.id, {
       include: [
         {
@@ -25,7 +27,7 @@ exports.generateContract = asyncHandler(async (req, res, next) => {
             "phone",
             "email",
             "dateOfBirth",
-            "address", // Single address field
+            "address",
             "country",
             "driverLicenseNumber",
             "passportNumber",
@@ -58,7 +60,6 @@ exports.generateContract = asyncHandler(async (req, res, next) => {
       `Found booking: ${booking.bookingNumber}, status: ${booking.status}`
     );
 
-    // UPDATED: Allow contract generation for confirmed, active, AND completed bookings
     if (!["confirmed", "active", "completed"].includes(booking.status)) {
       console.log(`Invalid booking status for contract: ${booking.status}`);
       return next(
@@ -69,7 +70,6 @@ exports.generateContract = asyncHandler(async (req, res, next) => {
       );
     }
 
-    // Check if customer data is sufficient for contract
     if (!booking.customer) {
       console.log("No customer data found for booking");
       return next(new ErrorResponse("Customer data not found", 400));
@@ -85,7 +85,6 @@ exports.generateContract = asyncHandler(async (req, res, next) => {
     );
     console.log(`Vehicle: ${booking.vehicle.brand} ${booking.vehicle.name}`);
 
-    // Generate the contract
     const contractGenerator = new ContractGenerator();
     console.log("Generating PDF contract...");
 
@@ -93,7 +92,6 @@ exports.generateContract = asyncHandler(async (req, res, next) => {
 
     console.log(`PDF generated successfully, size: ${pdfBuffer.length} bytes`);
 
-    // Set response headers for PDF download
     res.set({
       "Content-Type": "application/pdf",
       "Content-Disposition": `attachment; filename="Contract_${booking.bookingNumber}.pdf"`,
@@ -109,7 +107,6 @@ exports.generateContract = asyncHandler(async (req, res, next) => {
     console.error("Contract generation error:", error);
     console.error("Error stack:", error.stack);
 
-    // More specific error handling
     if (error.name === "SequelizeDatabaseError") {
       console.error(
         "Database error during contract generation:",
@@ -127,7 +124,6 @@ exports.generateContract = asyncHandler(async (req, res, next) => {
   }
 });
 
-// FIXED: Complete booking statistics function
 // @desc    Get booking statistics
 // @route   GET /api/bookings/stats
 // @access  Private (admin)
@@ -135,7 +131,6 @@ exports.getBookingStats = asyncHandler(async (req, res, next) => {
   try {
     console.log("📊 Getting booking statistics...");
 
-    // Get all bookings for detailed statistics
     const allBookings = await Booking.findAll({
       attributes: [
         "id",
@@ -153,7 +148,6 @@ exports.getBookingStats = asyncHandler(async (req, res, next) => {
       `📊 Found ${allBookings.length} bookings for stats calculation`
     );
 
-    // Initialize stats
     const stats = {
       totalBookings: allBookings.length,
       pendingBookings: 0,
@@ -166,7 +160,6 @@ exports.getBookingStats = asyncHandler(async (req, res, next) => {
       monthlyRevenue: 0,
     };
 
-    // Current month/year for monthly revenue
     const currentDate = new Date();
     const currentMonth = currentDate.getMonth();
     const currentYear = currentDate.getFullYear();
@@ -175,9 +168,7 @@ exports.getBookingStats = asyncHandler(async (req, res, next) => {
     let monthlyRevenue = 0;
     let completedBookingsCount = 0;
 
-    // Process each booking
     allBookings.forEach((booking) => {
-      // Count by status
       switch (booking.status) {
         case "pending":
           stats.pendingBookings++;
@@ -197,15 +188,11 @@ exports.getBookingStats = asyncHandler(async (req, res, next) => {
           break;
       }
 
-      // Calculate revenue with fallbacks
       let bookingAmount = 0;
 
-      // Try totalAmount first
       if (booking.totalAmount && !isNaN(booking.totalAmount)) {
         bookingAmount = parseFloat(booking.totalAmount);
-      }
-      // Fallback: calculate from dailyRate * totalDays
-      else if (
+      } else if (
         booking.dailyRate &&
         booking.totalDays &&
         !isNaN(booking.dailyRate) &&
@@ -216,17 +203,13 @@ exports.getBookingStats = asyncHandler(async (req, res, next) => {
         console.log(
           `📊 Calculated amount for booking ${booking.id}: ${bookingAmount}`
         );
-      }
-      // Last resort: use dailyRate
-      else if (booking.dailyRate && !isNaN(booking.dailyRate)) {
+      } else if (booking.dailyRate && !isNaN(booking.dailyRate)) {
         bookingAmount = parseFloat(booking.dailyRate);
       }
 
-      // Only count revenue for completed bookings
       if (booking.status === "completed" && bookingAmount > 0) {
         totalRevenue += bookingAmount;
 
-        // Check if booking is from current month
         const bookingDate = new Date(booking.createdAt);
         if (
           bookingDate.getMonth() === currentMonth &&
@@ -237,7 +220,6 @@ exports.getBookingStats = asyncHandler(async (req, res, next) => {
       }
     });
 
-    // Final calculations
     stats.totalRevenue = Math.round(totalRevenue * 100) / 100;
     stats.monthlyRevenue = Math.round(monthlyRevenue * 100) / 100;
     stats.averageBookingValue =
@@ -245,17 +227,7 @@ exports.getBookingStats = asyncHandler(async (req, res, next) => {
         ? Math.round((totalRevenue / completedBookingsCount) * 100) / 100
         : 0;
 
-    console.log("📊 Final stats calculated:", {
-      totalBookings: stats.totalBookings,
-      pendingBookings: stats.pendingBookings,
-      confirmedBookings: stats.confirmedBookings,
-      activeBookings: stats.activeBookings,
-      completedBookings: stats.completedBookings,
-      cancelledBookings: stats.cancelledBookings,
-      totalRevenue: stats.totalRevenue,
-      averageBookingValue: stats.averageBookingValue,
-      monthlyRevenue: stats.monthlyRevenue,
-    });
+    console.log("📊 Final stats calculated:", stats);
 
     res.status(200).json({
       success: true,
@@ -265,7 +237,6 @@ exports.getBookingStats = asyncHandler(async (req, res, next) => {
   } catch (error) {
     console.error("❌ Error in getBookingStats:", error);
 
-    // Return safe fallback stats
     const fallbackStats = {
       totalBookings: 0,
       pendingBookings: 0,
@@ -278,7 +249,6 @@ exports.getBookingStats = asyncHandler(async (req, res, next) => {
       monthlyRevenue: 0,
     };
 
-    // Try to get at least basic counts if possible
     try {
       const basicCount = await Booking.count();
       fallbackStats.totalBookings = basicCount;
@@ -297,14 +267,13 @@ exports.getBookingStats = asyncHandler(async (req, res, next) => {
   }
 });
 
-// NEW: Debug stats endpoint for troubleshooting
+// Debug stats endpoint
 exports.getBookingStatsDebug = asyncHandler(async (req, res, next) => {
   try {
     console.log(
       "🔍 DEBUG: Getting booking statistics with detailed logging..."
     );
 
-    // Get sample booking to check structure
     const sampleBooking = await Booking.findOne({
       limit: 1,
       raw: true,
@@ -312,7 +281,6 @@ exports.getBookingStatsDebug = asyncHandler(async (req, res, next) => {
 
     console.log("🔍 DEBUG: Sample booking structure:", sampleBooking);
 
-    // Get all bookings with key fields
     const allBookings = await Booking.findAll({
       attributes: [
         "id",
@@ -322,13 +290,12 @@ exports.getBookingStatsDebug = asyncHandler(async (req, res, next) => {
         "totalAmount",
         "createdAt",
       ],
-      limit: 10, // Limit for debugging
+      limit: 10,
       raw: true,
     });
 
     console.log("🔍 DEBUG: Sample bookings data:", allBookings);
 
-    // Get status counts
     const statusCounts = await Booking.findAll({
       attributes: [
         "status",
@@ -340,7 +307,6 @@ exports.getBookingStatsDebug = asyncHandler(async (req, res, next) => {
 
     console.log("🔍 DEBUG: Status counts:", statusCounts);
 
-    // Try to get revenue data
     let revenueQuery = null;
     try {
       revenueQuery = await Booking.findAll({
@@ -383,12 +349,13 @@ exports.getBookingStatsDebug = asyncHandler(async (req, res, next) => {
   }
 });
 
+// --- Check Availability with Pricing Preview ---
 // @desc    Check vehicle availability
 // @route   GET /api/bookings/availability/:vehicleId
 // @access  Private (admin)
 exports.checkAvailability = asyncHandler(async (req, res, next) => {
   const { vehicleId } = req.params;
-  const { pickupDate, returnDate } = req.query;
+  const { pickupDate, returnDate, pickupTime, returnTime } = req.query;
 
   if (!pickupDate || !returnDate) {
     return next(
@@ -401,56 +368,65 @@ exports.checkAvailability = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse("Vehicle not found", 404));
   }
 
-  const isAvailable = await Booking.checkVehicleAvailability(
+  // Get availability details
+  const availabilityDetails = await Booking.getVehicleAvailabilityDetails(
     vehicleId,
     pickupDate,
-    returnDate
+    returnDate,
+    pickupTime,
+    returnTime
   );
 
-  // Get conflicting bookings if not available
-  let conflictingBookings = [];
-  if (!isAvailable) {
-    conflictingBookings = await Booking.findAll({
-      where: {
-        vehicleId,
-        status: ["confirmed", "active"],
-        [Op.or]: [
-          {
-            pickupDate: {
-              [Op.between]: [pickupDate, returnDate],
-            },
-          },
-          {
-            returnDate: {
-              [Op.between]: [pickupDate, returnDate],
-            },
-          },
-          {
-            [Op.and]: [
-              { pickupDate: { [Op.lte]: pickupDate } },
-              { returnDate: { [Op.gte]: returnDate } },
-            ],
-          },
-        ],
-      },
-      attributes: ["id", "bookingNumber", "pickupDate", "returnDate", "status"],
-      include: [
-        {
-          model: Customer,
-          as: "customer",
-          attributes: ["firstName", "lastName"],
-        },
-      ],
-    });
+  // Calculate pricing if times provided
+  let pricingPreview = null;
+  if (pickupTime && returnTime) {
+    const pricing = calculateChargedDaysWithLatenessRule(
+      pickupDate,
+      returnDate,
+      pickupTime,
+      returnTime
+    );
+
+    const totalAmount = parseFloat(vehicle.price) * pricing.chargedDays;
+
+    pricingPreview = {
+      durationMinutes: pricing.durationMinutes,
+      durationHours: (pricing.durationMinutes / 60).toFixed(1),
+      fullDays: pricing.fullDays,
+      latenessMinutes: pricing.latenessMinutes,
+      chargedDays: pricing.chargedDays,
+      latenessFeeApplied: pricing.latenessMinutes >= 90,
+      dailyRate: vehicle.price,
+      totalAmount: totalAmount,
+    };
   }
 
   res.status(200).json({
     success: true,
     data: {
       vehicleId,
-      available: isAvailable,
+      available: availabilityDetails.isAvailable,
       searchDates: { pickupDate, returnDate },
-      conflictingBookings,
+      searchTimes: pickupTime && returnTime ? { pickupTime, returnTime } : null,
+      conflictingBookings: availabilityDetails.conflictingBookings.map(
+        (booking) => ({
+          id: booking.id,
+          bookingNumber: booking.bookingNumber,
+          pickupDate: booking.pickupDate,
+          returnDate: booking.returnDate,
+          pickupTime: booking.pickupTime,
+          returnTime: booking.returnTime,
+          status: booking.status,
+          customer: booking.customer
+            ? {
+                firstName: booking.customer.firstName,
+                lastName: booking.customer.lastName,
+              }
+            : null,
+        })
+      ),
+      pricingPreview,
+      message: availabilityDetails.message,
     },
   });
 });
@@ -509,7 +485,6 @@ exports.getVehicleCalendar = asyncHandler(async (req, res, next) => {
     endDate
   );
 
-  // Default to next 90 days if no dates provided
   const today = new Date();
   const start = startDate ? new Date(startDate) : today;
   const end = endDate
@@ -521,7 +496,6 @@ exports.getVehicleCalendar = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse("Vehicle not found", 404));
   }
 
-  // Get all confirmed/active bookings for this vehicle in the date range
   const bookings = await Booking.findAll({
     where: {
       vehicleId,
@@ -556,8 +530,8 @@ exports.getVehicleCalendar = asyncHandler(async (req, res, next) => {
       "bookingNumber",
       "pickupDate",
       "returnDate",
-      "pickupTime", // ✅ ADD THIS
-      "returnTime", // ✅ ADD THIS
+      "pickupTime",
+      "returnTime",
       "status",
     ],
     include: [
@@ -572,7 +546,6 @@ exports.getVehicleCalendar = asyncHandler(async (req, res, next) => {
 
   console.log("Found bookings:", bookings.length);
 
-  // Generate array of blocked dates and booking periods
   const blockedDates = [];
   const bookedPeriods = [];
 
@@ -589,7 +562,6 @@ exports.getVehicleCalendar = asyncHandler(async (req, res, next) => {
       booking.returnDate
     );
 
-    // Add booking period info
     bookedPeriods.push({
       id: booking.id,
       bookingNumber: booking.bookingNumber,
@@ -603,7 +575,6 @@ exports.getVehicleCalendar = asyncHandler(async (req, res, next) => {
         : "Unknown Customer",
     });
 
-    // Generate all dates in the booking range (inclusive)
     const currentDate = new Date(pickup);
     while (currentDate <= returnDate) {
       const dateStr = currentDate.toISOString().split("T")[0];
@@ -612,19 +583,15 @@ exports.getVehicleCalendar = asyncHandler(async (req, res, next) => {
     }
   });
 
-  // Remove duplicates from blocked dates
   const uniqueBlockedDates = [...new Set(blockedDates)];
   console.log("Blocked dates:", uniqueBlockedDates);
 
-  // Determine current availability status
   const todayStr = today.toISOString().split("T")[0];
 
-  // Find current booking (if vehicle is currently rented)
   const currentBooking = bookedPeriods.find(
     (period) => todayStr >= period.pickupDate && todayStr <= period.returnDate
   );
 
-  // Find upcoming booking (next booking after today)
   const upcomingBooking = bookedPeriods
     .filter((period) => period.pickupDate > todayStr)
     .sort(
@@ -632,10 +599,8 @@ exports.getVehicleCalendar = asyncHandler(async (req, res, next) => {
         new Date(a.pickupDate).getTime() - new Date(b.pickupDate).getTime()
     )[0];
 
-  // Determine if currently available
   const isCurrentlyAvailable = !currentBooking;
 
-  // Calculate next available date and time
   let nextAvailableDate = null;
   let nextAvailableTime = null;
 
@@ -648,7 +613,6 @@ exports.getVehicleCalendar = asyncHandler(async (req, res, next) => {
       returnTime: returnTime,
     });
 
-    // Parse return time
     const [returnHour, returnMin] = returnTime.split(":").map(Number);
     const formattedTime = `${String(returnHour).padStart(2, "0")}:${String(
       returnMin
@@ -670,11 +634,9 @@ exports.getVehicleCalendar = asyncHandler(async (req, res, next) => {
   }
 
   console.log("Next available:", { nextAvailableDate, nextAvailableTime });
-
   console.log("Current booking:", currentBooking);
   console.log("Upcoming booking:", upcomingBooking);
   console.log("Is currently available:", isCurrentlyAvailable);
-  console.log("Next available:", nextAvailableDate);
 
   res.status(200).json({
     success: true,

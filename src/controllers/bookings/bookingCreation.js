@@ -1,15 +1,16 @@
-// src/controllers/bookings/bookingCreation.js - UPDATED: Minimum 1 day + same-day logic
+// src/controllers/bookings/bookingCreation.js - REFACTORED: Admin sub-day bookings + new pricing
 const { Booking, Customer, Vehicle, Admin } = require("../../models");
 const { validationResult } = require("express-validator");
 const { Op } = require("sequelize");
 const asyncHandler = require("../../middleware/asyncHandler");
 const ErrorResponse = require("../../utils/errorResponse");
 
-// Import the helper functions with new same-day logic
+// --- Import New Utility Functions ---
 const {
-  calculateRentalDaysWithTimeLogic,
-  validateBookingDates,
-  validateSameDayBooking,
+  calculateChargedDaysWithLatenessRule,
+  calculateRentalDaysWithTimeLogic, // Website legacy
+  validateBookingDates, // Website validation (1-day min)
+  validateAdminBookingDates, // Admin validation (sub-day OK)
   checkAdvancedAvailability,
 } = require("../../utils/bookingUtils");
 
@@ -17,7 +18,7 @@ const {
 // @route   POST /api/bookings/website
 // @access  Public
 exports.createWebsiteBooking = asyncHandler(async (req, res, next) => {
-  // Check for validation errors
+  // --- Validation ---
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     console.error("Validation errors:", errors.array());
@@ -25,7 +26,6 @@ exports.createWebsiteBooking = asyncHandler(async (req, res, next) => {
   }
 
   const {
-    // Vehicle and dates
     vehicleId,
     pickupDate,
     returnDate,
@@ -33,23 +33,27 @@ exports.createWebsiteBooking = asyncHandler(async (req, res, next) => {
     returnTime,
     pickupLocation,
     returnLocation,
-    // Customer information
     firstName,
     lastName,
     phone,
-    email, // Optional
+    email,
   } = req.body;
 
   console.log("Website booking request:", req.body);
 
   try {
-    // UPDATED: Validate dates and times (allows same-day bookings)
-    const dateValidation = validateBookingDates(pickupDate, returnDate, pickupTime, returnTime);
+    // Website validation: minimum 1 day enforced
+    const dateValidation = validateBookingDates(
+      pickupDate,
+      returnDate,
+      pickupTime,
+      returnTime
+    );
     if (!dateValidation.isValid) {
       return next(new ErrorResponse(dateValidation.error, 400));
     }
 
-    // Verify vehicle exists and is active
+    // --- Vehicle Verification ---
     const vehicle = await Vehicle.findByPk(vehicleId);
     if (!vehicle) {
       return next(new ErrorResponse("Vehicle not found", 404));
@@ -59,7 +63,7 @@ exports.createWebsiteBooking = asyncHandler(async (req, res, next) => {
       return next(new ErrorResponse("Vehicle is not active", 400));
     }
 
-    // UPDATED: Enhanced availability check with same-day logic
+    // --- Availability Check ---
     const availabilityDetails = await Booking.getVehicleAvailabilityDetails(
       vehicleId,
       pickupDate,
@@ -71,7 +75,6 @@ exports.createWebsiteBooking = asyncHandler(async (req, res, next) => {
     if (!availabilityDetails.isAvailable) {
       console.error("Vehicle availability conflict:", availabilityDetails);
 
-      // Build detailed error message
       let errorMessage =
         "Vehicle is not available for the selected dates and times.";
 
@@ -82,20 +85,13 @@ exports.createWebsiteBooking = asyncHandler(async (req, res, next) => {
               `${booking.bookingNumber} (${booking.pickupDate} to ${booking.returnDate})`
           )
           .join(", ");
-        errorMessage += ` Date conflicts: ${conflictDetails}.`;
-      }
-
-      if (availabilityDetails.sameDayConflicts.length > 0) {
-        const sameDayDetails = availabilityDetails.sameDayConflicts
-          .map((conflict) => conflict.reason)
-          .join(", ");
-        errorMessage += ` Time conflicts: ${sameDayDetails}.`;
+        errorMessage += ` Conflicts: ${conflictDetails}.`;
       }
 
       return next(new ErrorResponse(errorMessage, 409));
     }
 
-    // Calculate required fields using your time logic (minimum 1 day)
+    // --- Pricing (Website uses legacy 1-day minimum) ---
     const totalDays = calculateRentalDaysWithTimeLogic(
       pickupDate,
       returnDate,
@@ -103,38 +99,27 @@ exports.createWebsiteBooking = asyncHandler(async (req, res, next) => {
       returnTime
     );
 
-    // UPDATED: Validate that we have at least 1 day
     if (totalDays < 1) {
       return next(new ErrorResponse("Minimum rental period is 1 day", 400));
     }
 
     const totalAmount = parseFloat(vehicle.price) * totalDays;
-
-    // Generate booking number
     const bookingNumber = await Booking.generateBookingNumber();
 
-    console.log("Calculated values with time logic (minimum 1 day):", {
+    console.log("Website booking calculation (1-day min):", {
       bookingNumber,
       totalDays,
       totalAmount,
       dailyRate: vehicle.price,
-      requestedDates: { pickupDate, returnDate },
-      requestedTimes: { pickupTime, returnTime },
-      isAvailable: availabilityDetails.isAvailable,
     });
 
-    // Find or create customer
-    let customer = null;
+    // --- Customer Lookup/Creation ---
+    let customer = await Customer.findOne({ where: { phone } });
 
-    // First try to find by phone (primary identifier)
-    customer = await Customer.findOne({ where: { phone } });
-
-    // If not found by phone, try by email (if provided)
     if (!customer && email) {
       customer = await Customer.findOne({ where: { email } });
     }
 
-    // If customer doesn't exist, create new one
     if (!customer) {
       customer = await Customer.create({
         firstName,
@@ -149,7 +134,7 @@ exports.createWebsiteBooking = asyncHandler(async (req, res, next) => {
       console.log("Found existing customer:", customer.id);
     }
 
-    // Create booking with ALL required fields explicitly set
+    // --- Persistence ---
     const booking = await Booking.create({
       bookingNumber,
       customerId: customer.id,
@@ -167,18 +152,14 @@ exports.createWebsiteBooking = asyncHandler(async (req, res, next) => {
       status: "pending",
     });
 
-    console.log("Created booking successfully with time logic:", {
+    console.log("Website booking created:", {
       id: booking.id,
       bookingNumber: booking.bookingNumber,
       totalDays: booking.totalDays,
       totalAmount: booking.totalAmount,
-      status: booking.status,
-      pickupTime: booking.pickupTime,
-      returnTime: booking.returnTime,
-      minimumDays: totalDays >= 1 ? "✓" : "✗",
     });
 
-    // Fetch the created booking with associations
+    // Fetch with associations
     const createdBooking = await Booking.findByPk(booking.id, {
       include: [
         {
@@ -200,7 +181,7 @@ exports.createWebsiteBooking = asyncHandler(async (req, res, next) => {
         "Booking request submitted successfully. We will contact you soon to confirm.",
       data: createdBooking,
       bookingDetails: {
-        duration: `${totalDays} day${totalDays > 1 ? 's' : ''}`,
+        duration: `${totalDays} day${totalDays > 1 ? "s" : ""}`,
         totalAmount: `€${totalAmount}`,
         dailyRate: `€${vehicle.price}/day`,
         minimumMet: totalDays >= 1,
@@ -218,7 +199,7 @@ exports.createWebsiteBooking = asyncHandler(async (req, res, next) => {
 // @route   POST /api/bookings
 // @access  Private (admin)
 exports.createAdminBooking = asyncHandler(async (req, res, next) => {
-  // Check for validation errors
+  // --- Validation ---
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     return next(new ErrorResponse("Validation failed", 400, errors.array()));
@@ -238,13 +219,20 @@ exports.createAdminBooking = asyncHandler(async (req, res, next) => {
   console.log("Admin booking request:", req.body);
 
   try {
-    // UPDATED: Validate dates and times (allows same-day bookings)
-    const dateValidation = validateBookingDates(pickupDate, returnDate, pickupTime, returnTime);
+    // Admin validation: sub-day bookings allowed (min 15 minutes)
+    const dateValidation = validateAdminBookingDates(
+      pickupDate,
+      returnDate,
+      pickupTime,
+      returnTime,
+      15 // configurable minimum duration in minutes
+    );
+
     if (!dateValidation.isValid) {
       return next(new ErrorResponse(dateValidation.error, 400));
     }
 
-    // Verify customer exists and is active
+    // --- Customer Verification ---
     const customer = await Customer.findByPk(customerId);
     if (!customer) {
       return next(new ErrorResponse("Customer not found", 404));
@@ -253,7 +241,7 @@ exports.createAdminBooking = asyncHandler(async (req, res, next) => {
       return next(new ErrorResponse("Customer account is not active", 400));
     }
 
-    // Verify vehicle exists and is active
+    // --- Vehicle Verification ---
     const vehicle = await Vehicle.findByPk(vehicleId);
     if (!vehicle) {
       return next(new ErrorResponse("Vehicle not found", 404));
@@ -263,7 +251,7 @@ exports.createAdminBooking = asyncHandler(async (req, res, next) => {
       return next(new ErrorResponse("Vehicle is not active", 400));
     }
 
-    // UPDATED: Enhanced availability check with same-day logic
+    // --- Availability Check ---
     const availabilityDetails = await Booking.getVehicleAvailabilityDetails(
       vehicleId,
       pickupDate,
@@ -275,7 +263,6 @@ exports.createAdminBooking = asyncHandler(async (req, res, next) => {
     if (!availabilityDetails.isAvailable) {
       console.error("Vehicle availability conflict:", availabilityDetails);
 
-      // Build detailed error message for admin
       let errorMessage =
         "Vehicle is not available for the selected dates and times.";
 
@@ -291,50 +278,35 @@ exports.createAdminBooking = asyncHandler(async (req, res, next) => {
         errorMessage += ` Conflicting bookings: ${conflictDetails}.`;
       }
 
-      if (availabilityDetails.sameDayConflicts.length > 0) {
-        const sameDayDetails = availabilityDetails.sameDayConflicts
-          .map((conflict) => {
-            const type =
-              conflict.type === "same_day_start"
-                ? "New booking starts too early"
-                : "New booking ends too late";
-            return `${type}: ${conflict.reason}`;
-          })
-          .join(", ");
-        errorMessage += ` Same-day conflicts: ${sameDayDetails}`;
-      }
-
       return next(new ErrorResponse(errorMessage, 400));
     }
 
-    // Calculate required fields using your time logic (minimum 1 day)
-    const totalDays = calculateRentalDaysWithTimeLogic(
+    // --- Pricing (Charged Days with Lateness Rule) ---
+    const pricingResult = calculateChargedDaysWithLatenessRule(
       pickupDate,
       returnDate,
       pickupTime,
       returnTime
     );
 
-    // UPDATED: Validate that we have at least 1 day
-    if (totalDays < 1) {
-      return next(new ErrorResponse("Minimum rental period is 1 day", 400));
-    }
+    const { fullDays, latenessMinutes, chargedDays, durationMinutes } =
+      pricingResult;
 
-    const totalAmount = parseFloat(vehicle.price) * totalDays;
-
-    // Generate booking number
+    const totalAmount = parseFloat(vehicle.price) * chargedDays;
     const bookingNumber = await Booking.generateBookingNumber();
 
-    console.log("Calculated admin booking values (minimum 1 day):", {
+    console.log("Admin booking calculation (lateness rule):", {
       bookingNumber,
-      totalDays,
+      durationMinutes,
+      fullDays,
+      latenessMinutes,
+      chargedDays,
       totalAmount,
       dailyRate: vehicle.price,
-      requestedTimes: { pickupTime, returnTime },
-      availabilityCheck: availabilityDetails.message,
+      latenessFeeApplied: latenessMinutes >= 90,
     });
 
-    // Create booking with ALL required fields explicitly set
+    // --- Persistence ---
     const booking = await Booking.create({
       bookingNumber,
       customerId,
@@ -346,24 +318,22 @@ exports.createAdminBooking = asyncHandler(async (req, res, next) => {
       pickupLocation,
       returnLocation,
       dailyRate: vehicle.price,
-      totalDays,
+      totalDays: chargedDays, // Store charged days
       totalAmount,
       createdById: req.admin.id,
       source: "admin",
-      status: "confirmed", // Admin bookings are automatically confirmed
+      status: "confirmed", // Admin bookings auto-confirmed
       confirmedById: req.admin.id,
       confirmedAt: new Date(),
     });
 
-    console.log("Created admin booking with time logic:", {
+    console.log("Admin booking created:", {
       id: booking.id,
       bookingNumber: booking.bookingNumber,
-      totalDays: booking.totalDays,
-      totalAmount: booking.totalAmount,
-      pickupTime: booking.pickupTime,
-      returnTime: booking.returnTime,
-      minimumDays: totalDays >= 1 ? "✓" : "✗",
-      status: "confirmed",
+      durationMinutes: durationMinutes,
+      chargedDays: chargedDays,
+      totalAmount: totalAmount,
+      latenessFeeApplied: latenessMinutes >= 90,
     });
 
     // Update customer and vehicle stats
@@ -376,7 +346,7 @@ exports.createAdminBooking = asyncHandler(async (req, res, next) => {
       await vehicle.update({ available: false });
     }
 
-    // Fetch the created booking with associations
+    // Fetch with associations
     const createdBooking = await Booking.findByPk(booking.id, {
       include: [
         {
@@ -402,11 +372,15 @@ exports.createAdminBooking = asyncHandler(async (req, res, next) => {
       message: "Booking created successfully",
       data: createdBooking,
       bookingDetails: {
-        duration: `${totalDays} day${totalDays > 1 ? 's' : ''}`,
+        durationMinutes: durationMinutes,
+        durationHours: (durationMinutes / 60).toFixed(1),
+        fullDays: fullDays,
+        latenessMinutes: latenessMinutes,
+        chargedDays: chargedDays,
+        latenessFeeApplied: latenessMinutes >= 90,
         totalAmount: `€${totalAmount}`,
         dailyRate: `€${vehicle.price}/day`,
         autoConfirmed: true,
-        availabilityCheck: availabilityDetails.message,
       },
       contractAvailable: true,
       contractDownloadUrl: `/api/bookings/${booking.id}/contract`,

@@ -1,10 +1,12 @@
-// src/controllers/bookings.js - UPDATED: Export debug function
+// src/controllers/bookings.js - REFACTORED: Update exports and recalculation logic
 const { Booking, Customer, Vehicle, Admin } = require("../models");
 const { validationResult } = require("express-validator");
 const { Op } = require("sequelize");
 const asyncHandler = require("../middleware/asyncHandler");
 const ErrorResponse = require("../utils/errorResponse");
-const { calculateRentalDaysWithTimeLogic } = require("../utils/bookingUtils");
+const {
+  calculateChargedDaysWithLatenessRule,
+} = require("../utils/bookingUtils");
 
 // Import other parts
 const {
@@ -22,7 +24,7 @@ const {
 const {
   generateContract,
   getBookingStats,
-  getBookingStatsDebug, // NEW: Import debug function
+  getBookingStatsDebug,
   checkAvailability,
   getCustomerBookings,
   getVehicleCalendar,
@@ -46,7 +48,7 @@ exports.getBookings = asyncHandler(async (req, res, next) => {
     dateTo,
   } = req.query;
 
-  // Build where clause
+  // --- Build Where Clause ---
   const where = {};
 
   if (status) {
@@ -84,12 +86,12 @@ exports.getBookings = asyncHandler(async (req, res, next) => {
     ];
   }
 
-  // Pagination
+  // --- Pagination ---
   const pageNum = parseInt(page, 10);
   const limitNum = parseInt(limit, 10);
   const offset = (pageNum - 1) * limitNum;
 
-  // Execute query
+  // --- Execute Query ---
   const { count, rows: bookings } = await Booking.findAndCountAll({
     where,
     limit: limitNum,
@@ -126,7 +128,7 @@ exports.getBookings = asyncHandler(async (req, res, next) => {
     ],
   });
 
-  // Build pagination result
+  // --- Build Pagination Result ---
   const pagination = {};
   const totalPages = Math.ceil(count / limitNum);
 
@@ -223,13 +225,21 @@ exports.getBooking = asyncHandler(async (req, res, next) => {
 // @route   PUT /api/bookings/:id
 // @access  Private (admin)
 exports.updateBooking = asyncHandler(async (req, res, next) => {
-  // Check for validation errors
+  // --- Validation ---
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     return next(new ErrorResponse("Validation failed", 400, errors.array()));
   }
 
-  let booking = await Booking.findByPk(req.params.id);
+  let booking = await Booking.findByPk(req.params.id, {
+    include: [
+      {
+        model: Vehicle,
+        as: "vehicle",
+        attributes: ["id", "price"],
+      },
+    ],
+  });
 
   if (!booking) {
     return next(new ErrorResponse("Booking not found", 404));
@@ -242,16 +252,26 @@ exports.updateBooking = asyncHandler(async (req, res, next) => {
     );
   }
 
-  // If dates are being changed, check vehicle availability
-  if (req.body.pickupDate || req.body.returnDate) {
+  // --- If Dates/Times Changed, Check Availability & Recalculate ---
+  if (
+    req.body.pickupDate ||
+    req.body.returnDate ||
+    req.body.pickupTime ||
+    req.body.returnTime
+  ) {
     const newPickupDate = req.body.pickupDate || booking.pickupDate;
     const newReturnDate = req.body.returnDate || booking.returnDate;
+    const newPickupTime = req.body.pickupTime || booking.pickupTime;
+    const newReturnTime = req.body.returnTime || booking.returnTime;
 
+    // Check availability
     const isAvailable = await Booking.checkVehicleAvailability(
       booking.vehicleId,
       newPickupDate,
       newReturnDate,
-      booking.id
+      booking.id,
+      newPickupTime,
+      newReturnTime
     );
 
     if (!isAvailable) {
@@ -259,9 +279,29 @@ exports.updateBooking = asyncHandler(async (req, res, next) => {
         new ErrorResponse("Vehicle is not available for the updated dates", 400)
       );
     }
+
+    // Recalculate charged days with lateness rule
+    const pricing = calculateChargedDaysWithLatenessRule(
+      newPickupDate,
+      newReturnDate,
+      newPickupTime,
+      newReturnTime
+    );
+
+    req.body.totalDays = pricing.chargedDays;
+    req.body.totalAmount =
+      parseFloat(booking.vehicle.price) * pricing.chargedDays;
+
+    console.log("Booking update - recalculated pricing:", {
+      bookingId: booking.id,
+      originalChargedDays: booking.totalDays,
+      newChargedDays: pricing.chargedDays,
+      latenessMinutes: pricing.latenessMinutes,
+      latenessFeeApplied: pricing.latenessMinutes >= 90,
+    });
   }
 
-  // Update booking
+  // --- Update Booking ---
   await booking.update(req.body);
 
   // Fetch updated booking with associations
@@ -321,10 +361,11 @@ exports.deleteBooking = asyncHandler(async (req, res, next) => {
   });
 });
 
-// Export the helper function for other modules
-exports.calculateRentalDaysWithTimeLogic = calculateRentalDaysWithTimeLogic;
+// --- Export Helper Function ---
+exports.calculateChargedDaysWithLatenessRule =
+  calculateChargedDaysWithLatenessRule;
 
-// Export functions from other modules
+// --- Export Functions from Other Modules ---
 exports.createWebsiteBooking = createWebsiteBooking;
 exports.createAdminBooking = createAdminBooking;
 exports.confirmBooking = confirmBooking;

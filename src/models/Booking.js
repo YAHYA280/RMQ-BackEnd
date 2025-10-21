@@ -1,9 +1,9 @@
-// src/models/Booking.js - UPDATED: Minimum 2 days + same-day booking logic
+// src/models/Booking.js - REFACTORED: Support sub-day durations + lateness rule
 const { DataTypes } = require("sequelize");
 const { sequelize } = require("../config/database");
 const {
-  calculateRentalDaysWithTimeLogic,
-  getTimeExcessInfo,
+  calculateChargedDaysWithLatenessRule,
+  getLatenessInfo,
   checkAdvancedAvailability,
 } = require("../utils/bookingUtils");
 
@@ -36,7 +36,7 @@ const Booking = sequelize.define(
         key: "id",
       },
     },
-    // Date and time information
+    // --- Date and Time ---
     pickupDate: {
       type: DataTypes.DATEONLY,
       allowNull: false,
@@ -50,11 +50,9 @@ const Booking = sequelize.define(
       validate: {
         isDate: true,
         isAfterPickup(value) {
-          // Allow same-day bookings (pickup and return can be on the same day)
           if (value < this.pickupDate) {
             throw new Error("Return date cannot be before pickup date");
           }
-          // No minimum day validation here - it will be handled by time logic
         },
       },
     },
@@ -72,7 +70,7 @@ const Booking = sequelize.define(
         is: /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/,
       },
     },
-    // Location information
+    // --- Location ---
     pickupLocation: {
       type: DataTypes.STRING(200),
       allowNull: false,
@@ -81,7 +79,7 @@ const Booking = sequelize.define(
       type: DataTypes.STRING(200),
       allowNull: false,
     },
-    // Pricing information
+    // --- Pricing ---
     dailyRate: {
       type: DataTypes.DECIMAL(10, 2),
       allowNull: false,
@@ -93,7 +91,7 @@ const Booking = sequelize.define(
       type: DataTypes.INTEGER,
       allowNull: false,
       validate: {
-        min: 1, // UPDATED: Minimum 1 day
+        min: 1, // Charged days (always >= 1)
       },
     },
     totalAmount: {
@@ -103,7 +101,7 @@ const Booking = sequelize.define(
         min: 0,
       },
     },
-    // Booking status and workflow
+    // --- Status ---
     status: {
       type: DataTypes.ENUM(
         "pending",
@@ -118,10 +116,10 @@ const Booking = sequelize.define(
       type: DataTypes.ENUM("website", "admin"),
       defaultValue: "website",
     },
-    // Admin tracking
+    // --- Admin Tracking ---
     createdById: {
       type: DataTypes.UUID,
-      allowNull: true, // Can be null for website bookings
+      allowNull: true,
       references: {
         model: "admins",
         key: "id",
@@ -158,7 +156,7 @@ const Booking = sequelize.define(
     timestamps: true,
     hooks: {
       beforeUpdate: async (booking) => {
-        // Recalculate totals if relevant fields changed (now includes time fields)
+        // Recalculate totals if relevant fields changed
         if (
           booking.changed("dailyRate") ||
           booking.changed("pickupDate") ||
@@ -166,13 +164,13 @@ const Booking = sequelize.define(
           booking.changed("pickupTime") ||
           booking.changed("returnTime")
         ) {
-          // Use the new time logic calculation
-          booking.totalDays = booking.calculateRentalDays();
+          const pricing = booking.calculateChargedDays();
+          booking.totalDays = pricing.chargedDays;
           booking.totalAmount =
-            parseFloat(booking.dailyRate) * booking.totalDays;
+            parseFloat(booking.dailyRate) * pricing.chargedDays;
         }
 
-        // Set confirmation timestamp
+        // Set timestamps
         if (
           booking.changed("status") &&
           booking.status === "confirmed" &&
@@ -181,7 +179,6 @@ const Booking = sequelize.define(
           booking.confirmedAt = new Date();
         }
 
-        // Set cancellation timestamp
         if (
           booking.changed("status") &&
           booking.status === "cancelled" &&
@@ -215,21 +212,25 @@ const Booking = sequelize.define(
   }
 );
 
-// Instance methods
+// --- Instance Methods ---
 
-// UPDATED: Calculate rental days with time logic (minimum 1 day)
-Booking.prototype.calculateRentalDays = function () {
+// Calculate charged days using lateness rule
+Booking.prototype.calculateChargedDays = function () {
   if (
     !this.pickupDate ||
     !this.returnDate ||
     !this.pickupTime ||
     !this.returnTime
   ) {
-    return 1;
+    return {
+      chargedDays: 1,
+      fullDays: 0,
+      latenessMinutes: 0,
+      durationMinutes: 0,
+    };
   }
 
-  // Use the utility function with minimum 1 day
-  return calculateRentalDaysWithTimeLogic(
+  return calculateChargedDaysWithLatenessRule(
     this.pickupDate,
     this.returnDate,
     this.pickupTime,
@@ -237,20 +238,15 @@ Booking.prototype.calculateRentalDays = function () {
   );
 };
 
-// Get time difference info for display
-Booking.prototype.getTimeExcessInfo = function () {
-  return getTimeExcessInfo(this.pickupTime, this.returnTime);
+// Get lateness info for display
+Booking.prototype.getLatenessInfo = function () {
+  if (!this.pickupTime || !this.returnTime) return null;
+
+  const pricing = this.calculateChargedDays();
+  return getLatenessInfo(this.pickupTime, this.returnTime, pricing.fullDays);
 };
 
-// LEGACY: Original duration method (kept for backward compatibility, minimum 1 day)
-Booking.prototype.getDuration = function () {
-  const pickup = new Date(this.pickupDate);
-  const returnDate = new Date(this.returnDate);
-  const diffTime = Math.abs(returnDate - pickup);
-  const days = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-  return Math.max(1, days); // UPDATED: Minimum 1 day
-};
-
+// Check if booking is overdue
 Booking.prototype.isOverdue = function () {
   if (this.status !== "active") return false;
   const today = new Date();
@@ -258,15 +254,16 @@ Booking.prototype.isOverdue = function () {
   return today > returnDate;
 };
 
+// Check if booking can be cancelled
 Booking.prototype.canBeCancelled = function () {
   const allowedStatuses = ["pending", "confirmed"];
   return allowedStatuses.includes(this.status);
 };
 
-// Check if booking has time-based extra charges
-Booking.prototype.hasTimeExtraCharge = function () {
-  const timeInfo = this.getTimeExcessInfo();
-  return timeInfo && timeInfo.hasExcess;
+// Check if lateness fee was applied
+Booking.prototype.hasLatenessFee = function () {
+  const pricing = this.calculateChargedDays();
+  return pricing.latenessMinutes >= 90;
 };
 
 // Get formatted time display
@@ -285,20 +282,14 @@ Booking.prototype.getFormattedTimes = function () {
   };
 };
 
-// NEW: Check if this booking conflicts with another booking using same-day logic
+// Check if this booking conflicts with another
 Booking.prototype.conflictsWith = function (otherBooking) {
-  // Skip if same booking
   if (this.id === otherBooking.id) return false;
-
-  // Skip if either booking is cancelled
   if (this.status === "cancelled" || otherBooking.status === "cancelled") {
     return false;
   }
-
-  // Different vehicles = no conflict
   if (this.vehicleId !== otherBooking.vehicleId) return false;
 
-  // Use advanced availability check
   const availabilityCheck = checkAdvancedAvailability(
     [otherBooking],
     this.pickupDate,
@@ -311,7 +302,7 @@ Booking.prototype.conflictsWith = function (otherBooking) {
   return !availabilityCheck.isAvailable;
 };
 
-// Define default customer attributes to include (simplified to match your new structure)
+// Get customer attributes helper
 Booking.getCustomerAttributes = function () {
   return [
     "id",
@@ -320,7 +311,7 @@ Booking.getCustomerAttributes = function () {
     "phone",
     "email",
     "dateOfBirth",
-    "address", // Single address field
+    "address",
     "country",
     "driverLicenseNumber",
     "passportNumber",
@@ -329,20 +320,19 @@ Booking.getCustomerAttributes = function () {
   ];
 };
 
-// Define default vehicle attributes to include
+// Get vehicle attributes helper
 Booking.getVehicleAttributes = function () {
   return ["id", "name", "brand", "year", "licensePlate", "price", "mileage"];
 };
 
-// Class methods
+// --- Class Methods ---
 
-// Class method for generating booking numbers like BK001, BK002, etc.
+// Generate booking number
 Booking.generateBookingNumber = async function () {
   let bookingNumber;
   let isUnique = false;
   let counter = 1;
 
-  // Get the highest booking number to determine next increment
   const lastBooking = await Booking.findOne({
     where: {
       bookingNumber: {
@@ -353,16 +343,13 @@ Booking.generateBookingNumber = async function () {
   });
 
   if (lastBooking && lastBooking.bookingNumber) {
-    // Extract number from booking number like BK001 -> 001 -> 1
     const lastNumber = lastBooking.bookingNumber.match(/BK(\d+)/);
     if (lastNumber) {
       counter = parseInt(lastNumber[1]) + 1;
     }
   }
 
-  // Keep trying until we find a unique number
   while (!isUnique) {
-    // Format as BK001, BK002, etc. (3 digits with leading zeros)
     bookingNumber = `BK${String(counter).padStart(3, "0")}`;
 
     const existingBooking = await Booking.findOne({
@@ -375,7 +362,6 @@ Booking.generateBookingNumber = async function () {
       counter++;
     }
 
-    // Safety check to prevent infinite loop
     if (counter > 999999) {
       throw new Error("Unable to generate unique booking number");
     }
@@ -384,7 +370,7 @@ Booking.generateBookingNumber = async function () {
   return bookingNumber;
 };
 
-// UPDATED: Enhanced vehicle availability check with same-day logic
+// --- Availability Check (Minute Precision) ---
 Booking.checkVehicleAvailability = async function (
   vehicleId,
   pickupDate,
@@ -406,8 +392,8 @@ Booking.checkVehicleAvailability = async function (
     where: whereClause,
   });
 
-  // If no times provided, use basic date overlap check
   if (!pickupTime || !returnTime) {
+    // Basic date overlap check (legacy)
     const conflictingBookings = existingBookings.filter((booking) => {
       const bookingStart = new Date(booking.pickupDate);
       const bookingEnd = new Date(booking.returnDate);
@@ -420,7 +406,7 @@ Booking.checkVehicleAvailability = async function (
     return conflictingBookings.length === 0;
   }
 
-  // Use advanced availability check with same-day logic
+  // Advanced availability check with minute precision
   const availabilityCheck = checkAdvancedAvailability(
     existingBookings,
     pickupDate,
@@ -433,7 +419,7 @@ Booking.checkVehicleAvailability = async function (
   return availabilityCheck.isAvailable;
 };
 
-// NEW: Get detailed availability info for a vehicle
+// Get detailed availability info
 Booking.getVehicleAvailabilityDetails = async function (
   vehicleId,
   pickupDate,
@@ -460,7 +446,6 @@ Booking.getVehicleAvailabilityDetails = async function (
   });
 
   if (!pickupTime || !returnTime) {
-    // Basic availability check
     const conflicts = existingBookings.filter((booking) => {
       const bookingStart = new Date(booking.pickupDate);
       const bookingEnd = new Date(booking.returnDate);
@@ -481,7 +466,6 @@ Booking.getVehicleAvailabilityDetails = async function (
     };
   }
 
-  // Advanced availability check
   const availabilityCheck = checkAdvancedAvailability(
     existingBookings,
     pickupDate,
@@ -515,6 +499,7 @@ Booking.getVehicleAvailabilityDetails = async function (
   };
 };
 
+// Get booking stats
 Booking.getBookingStats = async function () {
   const { sequelize } = require("../config/database");
 
